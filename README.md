@@ -1,11 +1,24 @@
 # TG Video TV
 
-Android TV app to **browse, stream and download videos from Telegram**, built with Kotlin, TDLib, Leanback and Media3 (ExoPlayer).
+[![Release](https://img.shields.io/github/v/release/aravindbuilds/TelegramVideoTV)](https://github.com/aravindbuilds/TelegramVideoTV/releases)
+[![Platform](https://img.shields.io/badge/platform-Android%20TV-green)](#supported-versions)
+[![License](https://img.shields.io/github/license/aravindbuilds/TelegramVideoTV)](LICENSE)
 
-Streaming is **in-process, bot-free and private** — no third-party "filetolink" host bots and no external player app:
+**Turn your Telegram into a private Netflix for your TV.** TG Video TV is a free, open-source
+Android TV app that you sideload onto your TV box to browse, stream and download videos stored
+in your Telegram account — Saved Messages, private library groups, channels.
+No ads. No upload limits. Your Telegram account *is* the server.
 
-1. **Documents count as videos** — `MessageVideo`, `MessageVideoNote`, `MessageAnimation` and `MessageDocument` (video MIME or extensions like `.mkv`, `.avi`, `.webm`, ...) are all mapped to playable cards. Most large videos on Telegram travel as generic documents, so those are fully supported.
-2. **TDLib + ExoPlayer, nothing in between** — the player reads TDLib's partial local file directly behind the read cursor. Playback starts in seconds even for multi-GB files. Full download is available via long-press.
+- **Runs on**: Xiaomi Mi Box, NVIDIA Shield, Fire TV (sideload), Chromecast with Google TV, and any Android 8.0+ TV box
+- **Works with**: Telegram groups, channels, Saved Messages — videos travel as documents and still play
+- **Stack**: Kotlin · TDLib · Leanback · Media3 / ExoPlayer
+
+## Why it's different
+
+- Other "Telegram to TV" apps forward your file to a **third-party hosting bot** and stream the resulting public URL. TG Video TV streams entirely **in-process**: TDLib downloads the byte ranges the player needs straight onto the device and ExoPlayer reads them from disk — your files never leave the Telegram network on the way to your screen.
+- No file-size limit from the Bot API (which caps at 20 MB), no external player dependency, no public file links.
+
+Streaming design details: see [How streaming works](#how-streaming-works) below.
 
 ---
 
