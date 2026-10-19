@@ -38,7 +38,7 @@ object TmdbClient {
     /** Sentinel for "TMDB has no such title" (ConcurrentHashMap rejects nulls). */
     private val MISS = Info("", null, null, "")
 
-    private const val WEB_UA = "TGVideoTV/0.2 (github.com/aravindbuilds/TelegramVideoTV)"
+    private const val WEB_UA = "TGTV/0.3 (github.com/aravindbuilds/TelegramVideoTV)"
 
     /** Normalized query -> top result (misses cached through [MISS] to avoid refetching). */
     private val cache = ConcurrentHashMap<String, Info>()

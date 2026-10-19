@@ -1,4 +1,4 @@
-plugins {
+﻿plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
 }
@@ -12,8 +12,8 @@ android {
         // Keep 26: TDLib (io.github.tdlib-android) declares minSdk 26; MiBox4 ships Android 9
         minSdk = 26
         targetSdk = 35
-        versionCode = 3
-        versionName = "0.2"
+        versionCode = 4
+        versionName = "0.3"
     }
 
     flavorDimensions += "abi"

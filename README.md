@@ -1,10 +1,10 @@
-# TG Video TV
+# TGTV
 
 [![Release](https://img.shields.io/github/v/release/aravindbuilds/TelegramVideoTV)](https://github.com/aravindbuilds/TelegramVideoTV/releases)
 [![Platform](https://img.shields.io/badge/platform-Android%20TV-green)](#supported-versions)
 [![License](https://img.shields.io/github/license/aravindbuilds/TelegramVideoTV)](LICENSE)
 
-**Turn your Telegram into a private Netflix for your TV.** TG Video TV is a free, open-source
+**Turn your Telegram into a private Netflix for your TV.** TGTV is a free, open-source
 Android TV app that you sideload onto your Android TV to browse, stream and download videos stored
 in your Telegram account — Saved Messages, private library groups, channels.
 No ads. No upload limits. Your Telegram account *is* the server.
@@ -15,7 +15,7 @@ No ads. No upload limits. Your Telegram account *is* the server.
 
 ## Why it's different
 
-- Other "Telegram to TV" apps forward your file to a **third-party hosting bot** and stream the resulting public URL. TG Video TV streams entirely **in-process**: TDLib downloads the byte ranges the player needs straight onto the device and ExoPlayer reads them from disk — your files never leave the Telegram network on the way to your screen.
+- Other "Telegram to TV" apps forward your file to a **third-party hosting bot** and stream the resulting public URL. TGTV streams entirely **in-process**: TDLib downloads the byte ranges the player needs straight onto the device and ExoPlayer reads them from disk — your files never leave the Telegram network on the way to your screen.
 - No file-size limit from the Bot API (which caps at 20 MB), no external player dependency, no public file links.
 
 Streaming design details: see [How streaming works](#how-streaming-works) below.
@@ -30,7 +30,8 @@ Streaming design details: see [How streaming works](#how-streaming-works) below.
 - **TMDB metadata, built in** — every file is identified by parsing its release-style name (quality tags, audio languages, group junk), with spelling-tolerant retries and a **web-assisted fallback** (Wikipedia / DuckDuckGo → canonical title → TMDB). Cards show the real title, ★ rating, year and the official TMDB backdrop
 - **Version picker** — multiple files of the same title (1080p vs 720p, language cuts) are grouped on the details screen with size/quality/audio labels; tap to play that copy
 - **My List** — watchlist row bookmarked locally on the device
-- Settings row in the library: Refresh / Pair via phone / Sign out / TMDB metadata; long-press a card for Play / Download
+- Settings row in the library: Refresh / Pair via phone / Sign out / TMDB metadata / Subtitles; long-press a card for Play / Download
+- **Subtitles** — embedded tracks toggle from a settings dialog (language priority list); when a file has none, TGTV falls back to **OpenSubtitles.com** (bring your own free API key: Settings → Subtitles) by matching the TMDB ID and side-loading the SRT without losing playback position
 - Streaming via TDLib range downloads read straight from the partial local file (no Bot API 20 MB limit, no external file hosts)
 - Seeking pulls data from the seek position (not the file start)
 - YouTube-style time-based buffering: starts with ~2 s buffered, look-ahead grows to 5 minutes of video, plus a buffering spinner
@@ -39,6 +40,8 @@ Streaming design details: see [How streaming works](#how-streaming-works) below.
 - Full download to `Movies/TgTV` via MediaStore on API >= 29, private app dir on older devices; foreground-service download with progress notifications
 - **Streaming cache hygiene** — 20 s after you exit a video, its cached bytes are deleted automatically (instant replays within those 20 s keep the cache)
 - **2 GB storage cap** — the TDLib media cache is trimmed back to ~75% automatically whenever it grows past 2 GB
+- **Storage-aware playback** — big files warn at open if there is not enough free space to stream them, and playback pauses with a clear message before the device ever runs out of disk
+- **Cache monitor** — every 15 s while streaming, a log line records the TDLib cache size, so storage growth vs. network drops during stutter are distinguishable
 
 ## Known limitations
 
@@ -167,20 +170,20 @@ Long-press a card → `DownloadService` starts (foreground, dataSync):
 
 | | |
 |---|---|
-| **App version** | v0.2 |
+| **App version** | v0.3 |
 | **Android** | 8.0 (API 26) and newer |
 | **Tested on** | Xiaomi Mi Box 4 (Android 9, armeabi-v7a) |
 | **Architectures** | two variants: **v7a** (armeabi-v7a only, ~24 MB — recommended for all devices) and **universal** (all 4 ABIs, ~96 MB — emulators/exotic arm64 devices) |
 | **Target SDK** | 35 |
 | **TDLib** | io.github.tdlib-android:core 0.1.1 (TDLib 1.8) |
 
-Downloads: see [Releases](../../releases) — grab **`TGVideoTV-v0.2-v7a.apk`** for any Android TV or
-`TGVideoTV-v0.2-universal.apk` for emulators, then follow the
+Downloads: see [Releases](../../releases) — grab **`TGTV-v0.3-v7a.apk`** for any Android TV or
+`TGTV-v0.3-universal.apk` for emulators, then follow the
 [Sideload guide](#sideload-install-guide) below.
 
 ---
 
-<p align="center"><img src="art/logo.png" alt="TG Video TV logo" width="140"></p>
+<p align="center"><img src="art/logo.png" alt="TGTV logo" width="140"></p>
 
 ## Sideload install guide
 
@@ -198,12 +201,12 @@ method suits your setup — all of them end with the same APK install dialog on 
 
 ### Method A — USB drive (no computer needed)
 
-1. Copy `TGVideoTV-v0.1.apk` to a USB stick (FAT32/exFAT both work)
+1. Copy `TGTV-v0.3-v7a.apk` to a USB stick (FAT32/exFAT both work)
 2. Plug the stick into the TV's USB port
 3. Open any **file manager** on the TV (most devices have one; if not, install
    [FX File Explorer](https://play.google.com/store/apps/details?id=nextapp.fx) or
    Solid Explorer from Play Store first)
-4. Browse to the stick → **TGVideoTV-v0.1.apk** → press OK → **Install** → **Open**
+4. Browse to the stick → **TGTV-v0.3-v7a.apk** → press OK → **Install** → **Open**
 
 ### Method B — over your Wi-Fi (no USB, no ADB)
 
@@ -221,7 +224,7 @@ From a PC on the same Wi-Fi, in the folder containing the APK:
 
 ```powershell
 adb connect <tv-ip>:5555      # some devices use :5037, Fire TV shows the port in Settings
-adb install -r TGVideoTV-v0.1.apk
+adb install -r TGTV-v0.3-v7a.apk
 adb shell am start -n com.tgtv.videotv/.ui.MainActivity
 ```
 
