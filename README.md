@@ -162,14 +162,16 @@ Long-press a card → `DownloadService` starts (foreground, dataSync):
 
 | | |
 |---|---|
-| **App version** | v0.1 |
+| **App version** | v0.1.1 |
 | **Android** | 8.0 (API 26) and newer |
 | **Tested on** | Xiaomi Mi Box 4 (Android 9, armeabi-v7a) |
-| **Architectures** | armeabi-v7a (the only ABI shipped — ~23 MB APK) |
+| **Architectures** | two variants: **v7a** (armeabi-v7a only, ~24 MB — recommended for all TV boxes) and **universal** (all 4 ABIs, ~96 MB — emulators/exotic arm64 boxes) |
 | **Target SDK** | 35 |
 | **TDLib** | io.github.tdlib-android:core 0.1.1 (TDLib 1.8) |
 
-Downloads: see [Releases](../../releases) — grab `TGVideoTV-v0.1.apk` and follow the
+Downloads: see [Releases](../../releases) — grab **`TGVideoTV-v0.1.1-v7a.apk`** for any
+real TV box (works on arm64 devices too, they run v7a natively) or
+`TGVideoTV-v0.1.1-universal.apk` for emulators, then follow the
 [Sideload guide](#sideload-install-guide) below.
 
 ---

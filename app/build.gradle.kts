@@ -12,13 +12,22 @@ android {
         // Keep 26: TDLib (io.github.tdlib-android) declares minSdk 26; MiBox4 ships Android 9
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "0.1.1"
+    }
 
-        // MiBox4 only runs armeabi-v7a; dropping the other TDLib ABIs
-        // shrinks the APK (and install footprint) by ~75%.
-        ndk {
-            abiFilters.add("armeabi-v7a")
+    flavorDimensions += "abi"
+    productFlavors {
+        // Falls back warmly on every device (arm64/x86 boxes run v7a natively)
+        create("v7a") {
+            dimension = "abi"
+            ndk {
+                abiFilters.add("armeabi-v7a")
+            }
+        }
+        // All 4 TDLib ABIs: emulators and true arm64 devices
+        create("universal") {
+            dimension = "abi"
         }
     }
 
