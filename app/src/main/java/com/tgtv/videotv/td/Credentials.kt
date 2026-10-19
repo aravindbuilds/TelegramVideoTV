@@ -12,6 +12,9 @@ object Credentials {
     const val KEY_LOGIN_MODE = "login_mode"
     const val KEY_TMDB_KEY = "tmdb_key"
     const val KEY_TMDB_DISABLED = "tmdb_disabled"
+    const val KEY_SUBS_ON = "subs_on"
+    const val KEY_SUBS_LANGS = "subs_langs"
+    const val KEY_OPENSUBS_KEY = "opensubtitles_key"
     const val MODE_BOT = "bot"
     const val MODE_USER = "user"
 
@@ -63,5 +66,35 @@ object Credentials {
 
     fun setTmdbDisabled(context: Context, disabled: Boolean) {
         prefs(context).edit().putBoolean(KEY_TMDB_DISABLED, disabled).apply()
+    }
+
+    // ------------------------------------------------------------------
+    // Subtitles
+    // ------------------------------------------------------------------
+
+    /** Embedded + fetched subtitles shown by default; settings can turn all off. */
+    fun subsEnabled(context: Context): Boolean = prefs(context).getBoolean(KEY_SUBS_ON, true)
+
+    fun setSubsEnabled(context: Context, on: Boolean) {
+        prefs(context).edit().putBoolean(KEY_SUBS_ON, on).apply()
+    }
+
+    /** Comma-separated ISO languages for OpenSubtitles fetches, default "en". */
+    fun subsLanguages(context: Context): String =
+        prefs(context).getString(KEY_SUBS_LANGS, "en")?.ifBlank { "en" } ?: "en"
+
+    fun setSubsLanguages(context: Context, langs: String) {
+        prefs(context).edit()
+            .putString(KEY_SUBS_LANGS, langs.trim().lowercase().takeIf { it.isNotBlank() } ?: "en")
+            .apply()
+    }
+
+    /** Bring-your-own OpenSubtitles.com API key ("secret" or full key); null = web subs off. */
+    fun openSubtitlesKey(context: Context): String? = prefs(context).getString(KEY_OPENSUBS_KEY, null)
+
+    fun setOpenSubtitlesKey(context: Context, key: String?) {
+        prefs(context).edit()
+            .putString(KEY_OPENSUBS_KEY, key?.trim()?.takeIf { it.isNotBlank() })
+            .apply()
     }
 }

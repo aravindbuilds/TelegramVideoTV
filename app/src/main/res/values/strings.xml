@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">TG Video TV</string>
+    <string name="app_name">TGTV</string>
     <string name="api_id_hint">Telegram API ID (my.telegram.org)</string>
     <string name="api_hash_hint">Telegram API Hash</string>
     <string name="bot_token_hint">Bot token (from @BotFather)</string>

@@ -37,7 +37,7 @@ class TdVideoStreamDataSource(
         private const val ALIGN_1K = 1024L
 
         // Bytes downloaded per synchronised window
-        private const val WINDOW = 1L * 1024L * 1024L
+        private const val WINDOW = 2L * 1024L * 1024L
 
         // Bytes warmed a head after each window (single fire-and-forget request)
         private const val AHEAD = 4L * ALIGN_1K * 1024L

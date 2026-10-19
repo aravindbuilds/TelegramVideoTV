@@ -44,6 +44,7 @@ Streaming design details: see [How streaming works](#how-streaming-works) below.
 
 - **Bots have no chat history** — Telegram's server refuses `LoadChats` / `GetChatHistory` / `SearchChatMessages` for bot accounts. Bot mode is live-only: the library fills as videos are posted to groups the bot is a member of. For full history use the **QR phone login** instead.
 - **Exotic codecs** — playback decoded by the TV box's hardware codecs; AVI/DTS-style media may fail on some android TVs.
+- **Streaming accumulates on disk** — streamed bytes are cached by TDLib as they are watched (roughly the whole file by the end of a full playthrough, plus look-ahead). The cache is purged ~20 s after you exit and capped at 2 GB while idle, but *during* playback local usage grows with what you have watched — TDLib has no API to trim a streaming file's already-read prefix. Files bigger than the box's free `/data` space cannot stream fully: the player warns at start (preflight) and pauses before storage runs out instead of dying mid-play. For huge files use a TV with more storage, or point the TDLib cache root at USB storage (Settings toggle on the roadmap).
 - One video per chat can download at a time (foreground service processes a single job; parallel queueing is a TODO).
 - Thumbnails are optional — if a video has no thumbnail its card is blank but still playable.
 

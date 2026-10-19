@@ -123,6 +123,24 @@ object TdLib {
     private fun dirSize(root: File): Long =
         root.walkBottomUp().filter { it.isFile }.sumOf { it.length() }
 
+    /**
+     * Logs the TDLib cache size every 15 s while a video is streaming, so
+     * stutter reports can be checked against cache growth ("is the cache
+     * leaking?"). Cheap: one walk of the cache dir per interval.
+     */
+    fun startCacheMonitor() {
+        appScope.launch {
+            while (isStarted) {
+                if (activeStreamFileId != null) {
+                    val root = filesRoot
+                    val mb = root?.let { dirSize(it) }?.ushr(20) ?: 0L
+                    Log.i(TAG, "cache monitor: streaming, tdlib_files = ${mb}MB")
+                }
+                delay(15_000L)
+            }
+        }
+    }
+
     private val _authState = MutableStateFlow<TdApi.AuthorizationState?>(null)
     val authState: StateFlow<TdApi.AuthorizationState?> = _authState.asStateFlow()
 
@@ -255,6 +273,7 @@ object TdLib {
                             delay(3_000L)
                             enforceCacheCap()
                         }
+                        startCacheMonitor()
                     }
                     else -> Unit
                 }
@@ -318,7 +337,7 @@ object TdLib {
             true, true, true, false,    // file / chat info / message databases
             Credentials.apiId(context),
             Credentials.apiHash(context).orEmpty(),
-            "en-US", "TG Video TV", "Android TV", "1.0",
+            "en-US", "TGTV", "Android TV", "1.0",
         )
         client?.send(p) { result ->
             if (result is TdApi.Error) {

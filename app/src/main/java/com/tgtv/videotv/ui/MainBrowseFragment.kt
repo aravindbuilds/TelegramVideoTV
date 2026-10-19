@@ -43,6 +43,7 @@ class MainBrowseFragment : BrowseSupportFragment() {
                 ActionItem(ACTION_PAIR_VIA_PHONE, "◱", "Pair via phone", "Scan a QR with Telegram"),
                 ActionItem(ACTION_SIGN_OUT, "⎋", "Sign out", "Forget this session and start over"),
                 ActionItem(ACTION_TMDB, "★", "TMDB metadata", "Real titles, years and ratings on the cards"),
+                ActionItem(ACTION_SUBS, "ⓒ", "Subtitles", "On/off, languages and OpenSubtitles key"),
             ),
         )
     }
@@ -52,7 +53,7 @@ class MainBrowseFragment : BrowseSupportFragment() {
         // Cleaner full-width rows without the left rail
         headersState = HEADERS_DISABLED
         isHeadersTransitionOnBackEnabled = false
-        title = "TG Video TV"
+        title = "TGTV"
         brandColor = resources.getColor(R.color.accent, null)
         setOnItemViewClickedListener { _, item, _, row ->
             when (item) {
@@ -135,6 +136,74 @@ class MainBrowseFragment : BrowseSupportFragment() {
                 }
             }
             ACTION_TMDB -> showTmdbDialog(activity)
+            ACTION_SUBS -> showSubtitlesDialog(activity)
+        }
+    }
+
+    private fun showSubtitlesDialog(activity: Activity) {
+        val on = Credentials.subsEnabled(activity)
+        val key = Credentials.openSubtitlesKey(activity)
+        val stateLine = buildString {
+            append(if (on) "On" else "Off")
+            append(" — ").append(Credentials.subsLanguages(activity))
+            append(", OpenSubtitles: ").append(
+                if (key == null) "no key (add a free key from opensubtitles.com)"
+                else key.take(4) + "…",
+            )
+        }
+        activity.runOnUiThread {
+            AlertDialog.Builder(activity)
+                .setTitle("Subtitles")
+                .setMessage(stateLine)
+                .setPositiveButton(if (on) "Turn off" else "Turn on") { _, _ ->
+                    Credentials.setSubsEnabled(activity, !on)
+                }
+                .setNegativeButton("Languages") { _, _ -> subsLanguagesInput(activity) }
+                .setNeutralButton("OpenSubtitles key") { _, _ -> opensubsKeyInput(activity) }
+                .show()
+        }
+    }
+
+    private fun subsLanguagesInput(activity: Activity) {
+        val input = android.widget.EditText(activity).apply {
+            hint = "en, hi, ml"
+            setSingleLine()
+            setText(Credentials.subsLanguages(activity))
+        }
+        activity.runOnUiThread {
+            AlertDialog.Builder(activity)
+                .setTitle("Subtitle languages")
+                .setMessage("Comma-separated ISO language codes, in priority order.")
+                .setView(input)
+                .setPositiveButton("Save") { _, _ ->
+                    Credentials.setSubsLanguages(activity, input.text.toString())
+                }
+                .setNegativeButton("Cancel", null)
+                .show()
+        }
+    }
+
+    private fun opensubsKeyInput(activity: Activity) {
+        val input = android.widget.EditText(activity).apply {
+            hint = "API key (hex or secret)"
+            setSingleLine()
+        }
+        activity.runOnUiThread {
+            AlertDialog.Builder(activity)
+                .setTitle("OpenSubtitles key")
+                .setMessage(
+                    "Create a free account at opensubtitles.com, then grab your API key " +
+                        "(Settings -> API keys) and paste it here.",
+                )
+                .setView(input)
+                .setPositiveButton("Save") { _, _ ->
+                    Credentials.setOpenSubtitlesKey(activity, input.text.toString())
+                }
+                .setNeutralButton("Remove") { _, _ ->
+                    Credentials.setOpenSubtitlesKey(activity, null)
+                }
+                .setNegativeButton("Cancel", null)
+                .show()
         }
     }
 
@@ -399,5 +468,6 @@ class MainBrowseFragment : BrowseSupportFragment() {
         const val ACTION_PAIR_VIA_PHONE = 2
         const val ACTION_SIGN_OUT = 3
         const val ACTION_TMDB = 4
+        const val ACTION_SUBS = 5
     }
 }

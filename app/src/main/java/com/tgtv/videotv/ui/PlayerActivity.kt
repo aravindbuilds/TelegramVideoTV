@@ -8,9 +8,13 @@ import android.view.View
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.Tracks
+import androidx.media3.common.C
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSource
 import androidx.media3.exoplayer.DefaultLoadControl
@@ -19,7 +23,15 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.PlayerView
 import com.tgtv.videotv.R
 import com.tgtv.videotv.model.VideoItem
+import com.tgtv.videotv.sub.Languages
+import com.tgtv.videotv.sub.SubtitlesClient
+import com.tgtv.videotv.td.Credentials
 import com.tgtv.videotv.td.TdLib
+import com.tgtv.videotv.td.TmdbClient
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
 
 /** Full-screen TV player that streams the Telegram file through [TdVideoStreamDataSource]. */
 @androidx.annotation.OptIn(UnstableApi::class)
@@ -31,15 +43,19 @@ class PlayerActivity : AppCompatActivity() {
                 putExtra(EXTRA_FILE_ID, video.fileId)
                 putExtra(EXTRA_SIZE, video.fileSize)
                 putExtra(EXTRA_MIME, video.mimeType)
+                putExtra(EXTRA_NAME, video.fileName.ifBlank { video.title })
             }
 
         private const val EXTRA_FILE_ID = "fileId"
         private const val EXTRA_SIZE = "size"
         private const val EXTRA_MIME = "mime"
+        private const val EXTRA_NAME = "name"
     }
 
     private var player: ExoPlayer? = null
     private var currentFileId = 0
+    private var fileName = ""
+    private var externalSubsTried = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -47,6 +63,7 @@ class PlayerActivity : AppCompatActivity() {
 
         val fileId = intent.getIntExtra(EXTRA_FILE_ID, 0)
         val size = intent.getLongExtra(EXTRA_SIZE, 0L)
+        fileName = intent.getStringExtra(EXTRA_NAME) ?: ""
         currentFileId = fileId
 
         if (fileId <= 0) {
@@ -85,11 +102,10 @@ class PlayerActivity : AppCompatActivity() {
             .apply {
                 // Mime type left unset: media3 sniffs the container (mp4/mkv/webm...)
                 setMediaItem(MediaItem.fromUri(Uri.parse("tgvfile://$fileId/$size")))
-                // Prefer embedded subtitle tracks (MKV/MP4 CC) when available;
-                // PlayerView's built-in caption button lets the user toggle them
+                // Subtitles setting drives both embedded selection and web fetch
                 trackSelectionParameters = trackSelectionParameters
                     .buildUpon()
-                    .setSelectUndeterminedTextLanguage(true)
+                    .setSelectUndeterminedTextLanguage(Credentials.subsEnabled(this@PlayerActivity))
                     .build()
                 prepare()
                 playWhenReady = true
@@ -99,10 +115,71 @@ class PlayerActivity : AppCompatActivity() {
                         errorView.text = "Playback error: ${error.errorCodeName}. " +
                             "Try the long-press download instead."
                     }
+
+                    override fun onTracksChanged(tracks: Tracks) {
+                        maybeFetchExternalSubtitles(tracks)
+                    }
                 })
             }
         player = exo
         findViewById<PlayerView>(R.id.playerView).player = exo
+    }
+
+    /**
+     * When the file ships no subtitle tracks at all and web subtitles are
+     * enabled, resolves the title through [TmdbClient] and side-loads an
+     * OpenSubtitles file (bring-your-own API key).
+     */
+    private fun maybeFetchExternalSubtitles(tracks: Tracks) {
+        if (externalSubsTried) return
+        if (!Credentials.subsEnabled(this)) return
+        if (fileName.isBlank()) return
+        val hasText = tracks.groups.any {
+            it.type == C.TRACK_TYPE_TEXT && it.isTrackSupported(0)
+        }
+        if (hasText) return
+        externalSubsTried = true
+        val exo = player ?: return
+        val context = applicationContext
+        if (!SubtitlesClient.hasKey(context)) return
+        lifecycleScope.launch(Dispatchers.IO) {
+            val fetched = SubtitlesClient.fetchFor(context, VideoItem(
+                messageId = 0L,
+                chatTitle = "",
+                title = fileName,
+                fileId = currentFileId,
+                fileSize = 0L,
+                durationSeconds = 0,
+                mimeType = "",
+                fileName = fileName,
+                thumbnailFileId = 0,
+            )) ?: run {
+                TdLib.log("subs: no external subtitles found for '$fileName'")
+                return@launch
+            }
+            withContext(Dispatchers.Main) {
+                attachSubtitle(exo, fetched.file, fetched.language, fetched.label)
+            }
+        }
+    }
+
+    /** Re-opens the media item with the fetched subtitle attached side-loaded. */
+    private fun attachSubtitle(exo: ExoPlayer, file: File, language: String, label: String) {
+        val position = exo.currentPosition
+        val playWhenReady = exo.playWhenReady
+        val config = MediaItem.SubtitleConfiguration.Builder(Uri.fromFile(file))
+            .setMimeType(MimeTypes.APPLICATION_SUBRIP)
+            .setLanguage(language)
+            .setLabel(Languages.nameOf(language))
+            .setId("tgsubs-$language")
+            .build()
+        val base = exo.currentMediaItem ?: return
+        val item = base.buildUpon()
+            .setSubtitleConfigurations(listOf(config))
+            .build()
+        exo.setMediaItem(item, position)
+        exo.prepare()
+        exo.playWhenReady = playWhenReady
     }
 
     override fun onStop() {
