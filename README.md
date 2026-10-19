@@ -169,10 +169,69 @@ Long-press a card → `DownloadService` starts (foreground, dataSync):
 | **Target SDK** | 35 |
 | **TDLib** | io.github.tdlib-android:core 0.1.1 (TDLib 1.8) |
 
-Downloads: see [Releases](../../releases) — grab `TGVideoTV-v0.1.apk` and install via
-USB file manager or `adb install`.
+Downloads: see [Releases](../../releases) — grab `TGVideoTV-v0.1.apk` and follow the
+[Sideload guide](#sideload-install-guide) below.
 
 ---
+
+<p align="center"><img src="art/logo.png" alt="TG Video TV logo" width="140"></p>
+
+## Sideload install guide
+
+Android TVs don't ship an app store for this APK, so you **sideload** it. Pick whichever
+method suits your setup — all of them end with the same APK install dialog on the TV.
+
+### Step 0 — allow app installs on the TV (any method)
+
+1. On the TV open **Settings → Device Preferences (or Apps) → Security & Restrictions**
+2. Under **Install unknown apps**, pick the app you'll install *from* (file manager,
+   Send files to TV, or ADB shell) and toggle **Allow from this source**
+3. (For the ADB method only) also enable **Settings → Device Preferences → About →
+   Network → tap Build / Android TV OS build 7 times** to unlock
+   **Developer options → Network debugging (ADB)**
+
+### Method A — USB drive (no computer needed)
+
+1. Copy `TGVideoTV-v0.1.apk` to a USB stick (FAT32/exFAT both work)
+2. Plug the stick into the TV's USB port
+3. Open any **file manager** on the TV (most boxes have one; if not, install
+   [FX File Explorer](https://play.google.com/store/apps/details?id=nextapp.fx) or
+   Solid Explorer from Play Store first)
+4. Browse to the stick → **TGVideoTV-v0.1.apk** → press OK → **Install** → **Open**
+
+### Method B — over your Wi-Fi (no USB, no ADB)
+
+1. Install **[Send Files to TV](https://play.google.com/store/apps/details?id=com.smartsysands.sendfilestotv)**
+   on **both** the TV (Play Store on Android TV) and your phone
+2. Open the app on the TV, **Receive** → note the TV's IP
+3. On the phone: **Send** → select the APK → pick the TV's IP → wait for the transfer
+4. On the TV the received APK opens from inside the app → **Install**
+
+*(Any LAN transfer app works the same way: LocalSend, TV File Transfer, etc.)*
+
+### Method C — ADB over the network (if the box has no file manager and no Play Store)
+
+From a PC on the same Wi-Fi, in the folder containing the APK:
+
+```powershell
+adb connect <tv-ip>:5555      # some boxes use :5037, Fire TV shows the port in Settings
+adb install -r TGVideoTV-v0.1.apk
+adb shell am start -n com.tgtv.videotv/.ui.MainActivity
+```
+
+If `adb connect` fails, enable **Developer options → Network debugging** (Step 0),
+or connect once with USB-ADB (Fire TV: Settings → My Fire TV → Developer options).
+
+### Troubleshooting
+
+| Symptom | Fix |
+|---|---|
+| "App not installed" mid-install | Internal storage full — delete unused apps/empty app caches, then retry |
+| Install button does nothing after "unknown apps" toggle | Re-do Step 0 and toggle the *actual app performing the install* |
+| Wrong-architecture APK | Not possible here — the APK ships armeabi-v7a which every TV box runs |
+| Launch opens nothing | Reboot the box once after install, then reopen |
+
+After install, continue with **[Setup (5 minutes)](#setup-5-minutes)**.
 
 ## Setup (5 minutes)
 
