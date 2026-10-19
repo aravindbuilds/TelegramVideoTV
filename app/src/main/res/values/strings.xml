@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">TG Video TV</string>
+    <string name="api_id_hint">Telegram API ID (my.telegram.org)</string>
+    <string name="api_hash_hint">Telegram API Hash</string>
+    <string name="bot_token_hint">Bot token (from @BotFather)</string>
+    <string name="login_button">Save and sign in</string>
+    <string name="login_qr_button">Sign in with phone (QR)</string>
+    <string name="qr_title">Sign in with Telegram</string>
+    <string name="qr_instructions">Open Telegram on your phone:\nSettings → Devices → Link Desktop Device\nthen scan this code</string>
+    <string name="downloading">Downloading</string>
+    <string name="download_complete">Download complete</string>
+    <string name="download_hint">Long-press a video card to download it</string>
+</resources>

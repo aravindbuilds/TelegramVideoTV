@@ -1,0 +1,23 @@
+# Gradle
+.gradle/
+build/
+
+# IDEs
+.idea/
+*.iml
+.vscode/
+local.properties
+
+# Android build outputs
+app/build/
+captures/
+
+# Logs and dumps
+*.log
+logcat*.txt
+hs_err_pid*
+
+# OS noise
+Thumbs.db
+.DS_Store
+*.apk

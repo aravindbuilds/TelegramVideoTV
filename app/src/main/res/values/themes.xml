@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- AppCompat activities: Login / QR / PhoneSetup / Player (media3 needs no leanback attrs) -->
+    <style name="Theme.TgVideoTv" parent="Theme.AppCompat.NoActionBar">
+        <item name="android:windowBackground">@color/background</item>
+        <item name="colorAccent">@color/accent</item>
+        <item name="android:colorAccent">@color/accent</item>
+    </style>
+
+    <!-- MainActivity hosts BrowseSupportFragment + ImageCardView, which require the
+         Leanback theme attributes (their layouts read them at inflate time) -->
+    <style name="Theme.TgVideoTv.Leanback" parent="Theme.Leanback">
+        <item name="android:windowBackground">@color/background</item>
+        <item name="colorAccent">@color/accent</item>
+    </style>
+
+    <style name="Theme.TgVideoTv.Player">
+        <item name="android:windowBackground">@android:color/black</item>
+    </style>
+</resources>

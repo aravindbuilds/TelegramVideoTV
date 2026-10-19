@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#101014">
+<title>TG Video TV setup</title>
+<style>
+  :root { --bg:#101014; --card:#1B2430; --line:#2A3749; --text:#F2F5FA; --dim:#8A97AB; --accent:#2AABEE; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body { margin:0; min-height:100vh; background:radial-gradient(1200px 600px at 50% -10%, #14304f 0%, var(--bg) 60%);
+         color:var(--text); font:16px/1.5 -apple-system, system-ui, "Segoe UI", Roboto, sans-serif; padding:24px 18px 48px; }
+  .wrap { max-width:460px; margin:0 auto; }
+  h1 { font-size:26px; margin:0 0 6px; letter-spacing:-.3px; }
+  p.sub { margin:0 0 22px; color:var(--dim); }
+  form { background:var(--card); border:1px solid var(--line); border-radius:20px; padding:20px; }
+  label { display:block; font-size:13px; font-weight:600; color:var(--dim); margin:0 0 6px; text-transform:uppercase; letter-spacing:.6px; }
+  input { width:100%; padding:14px 14px; border-radius:12px; border:1px solid var(--line); background:#0D131D;
+          color:var(--text); font-size:16px; margin-bottom:16px; outline:none; font-family:ui-monospace, Menlo, monospace; }
+  input:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(42,171,238,.2); }
+  .hint { font-size:13px; color:var(--dim); margin:-8px 0 16px; }
+  .hint a { color:var(--accent); text-decoration:none; }
+  .mode { display:flex; gap:10px; margin-bottom:18px; }
+  .mode label { flex:1; display:flex; align-items:center; justify-content:center; gap:8px; padding:14px 8px; margin:0;
+                border:1px solid var(--line); border-radius:12px; font-size:15px; font-weight:600; color:var(--text);
+                text-transform:none; letter-spacing:0; background:#0D131D; }
+  .mode input { width:auto; margin:0; }
+  .mode label:has(input:checked) { border-color:var(--accent); color:var(--accent); }
+  button { width:100%; border:0; border-radius:14px; padding:16px; font-size:17px; font-weight:700; color:#fff;
+           background:linear-gradient(135deg,#2AABEE,#1B7FC4); box-shadow:0 8px 24px rgba(42,171,238,.3); }
+  button:disabled { opacity:.5; }
+  #status { margin-top:18px; padding:14px 16px; border-radius:14px; background:var(--card); border:1px solid var(--line);
+            display:none; align-items:center; gap:12px; }
+  #status.show { display:flex; }
+  .dot { width:10px; height:10px; border-radius:50%; background:var(--dim); flex:none; }
+  .connecting .dot { background:#FBBF24; animation:pulse 1s infinite; }
+  .ready .dot { background:#4ADE80; } .error .dot { background:#F87171; }
+  @keyframes pulse { 50% { opacity:.3; } }
+  .foot { margin-top:22px; font-size:13px; color:var(--dim); text-align:center; }
+  .botonly { display:block; }
+  form.user .botonly { display:none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Link Telegram to your TV</h1>
+  <p class="sub">Enter your details here — they are sent to your TV over this network.</p>
+
+  <form id="f" autocomplete="off" novalidate>
+    <label>Sign-in type</label>
+    <div class="mode">
+      <label><input type="radio" name="mode" value="bot" checked onchange="shape()"> Bot token</label>
+      <label><input type="radio" name="mode" value="user" onchange="shape()"> Phone (QR)</label>
+    </div>
+
+    <div class="hint">Get both keys at <a href="https://my.telegram.org/apps" target="_blank" rel="noopener">my.telegram.org/apps</a></div>
+    <label for="api_id">API ID</label>
+    <input id="api_id" inputmode="numeric" pattern="[0-9]*" placeholder="1234567">
+    <label for="api_hash">API hash</label>
+    <input id="api_hash" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="32 character hash">
+
+    <div class="botonly">
+      <label for="bot_token">Bot token</label>
+      <input id="bot_token" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="123456:ABC-DEF…">
+      <div class="hint">Create a bot with <a href="https://t.me/BotFather" target="_blank" rel="noopener">@BotFather</a>.</div>
+    </div>
+
+    <button id="go" type="submit">Connect TV</button>
+  </form>
+
+  <div id="status"><span class="dot"></span><span id="msg"></span></div>
+  <div class="foot">Your details stay on this network and on your TV.</div>
+</div>
+<script>
+  var T = "__TOKEN__";
+  var f = document.getElementById("f"), go = document.getElementById("go");
+  var box = document.getElementById("status"), msg = document.getElementById("msg");
+  var timer = null;
+
+  function mode() {
+    return document.querySelector("input[name=mode]:checked").value;
+  }
+  function shape() {
+    var m = mode();
+    f.classList.toggle("user", m === "user");
+    go.textContent = (m === "user") ? "Connect TV (scan QR next)" : "Connect TV";
+  }
+  shape();
+
+  function show(state, text) {
+    box.className = "show " + state;
+    box.classList.add("show");
+    msg.textContent = text;
+  }
+
+  function poll() {
+    if (timer) return;
+    timer = setInterval(function () {
+      fetch("/status?t=" + T).then(function (r) { return r.json(); }).then(function (j) {
+        show(j.state, j.message);
+        if (j.state === "ready" || j.state === "qr") {
+          clearInterval(timer); timer = null;
+          go.disabled = true;
+          go.textContent = (j.state === "qr") ? "Scan the code on your TV" : "Connected ✓";
+        }
+        if (j.state === "error") { go.disabled = false; }
+      }).catch(function () { show("error", "Lost connection to your TV"); });
+    }, 1000);
+  }
+
+  f.addEventListener("submit", function (e) {
+    e.preventDefault();
+    var m = mode();
+    var id = document.getElementById("api_id").value.trim();
+    var hash = document.getElementById("api_hash").value.trim();
+    var token = document.getElementById("bot_token").value.trim();
+    if (!/^[0-9]+$/.test(id)) { show("error", "API ID should be a number."); return; }
+    if (!/^[0-9a-fA-F]{32}$/.test(hash)) { show("error", "API hash should be 32 letters/numbers."); return; }
+    if (m === "bot" && !/^[0-9]{6,12}:[A-Za-z0-9_-]{30,}$/.test(token)) {
+      show("error", "Bot token must look like 123456:ABC-DEF... - check for double-paste."); return;
+    }
+    go.disabled = true;
+    show("connecting", "Sending to your TV…");
+    var body = new URLSearchParams({
+      t: T,
+      mode: m,
+      api_id: id,
+      api_hash: hash,
+      bot_token: token
+    });
+    fetch("/save?t=" + T, { method: "POST", body: body })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (!j.ok) { show("error", j.message); go.disabled = false; return; }
+        show("connecting", m === "user" ? "Sending… now scan the QR on your TV" : "Connecting to Telegram…");
+        poll();
+      })
+      .catch(function () { show("error", "Couldn't reach your TV"); go.disabled = false; });
+  });
+</script>
+</body>
+</html>
