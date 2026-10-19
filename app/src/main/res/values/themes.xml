@@ -1,10 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- AppCompat activities: Login / QR / PhoneSetup / Player (media3 needs no leanback attrs) -->
+    <!-- Netflix-inspired red/black/charcoal theme -->
     <style name="Theme.TgVideoTv" parent="Theme.AppCompat.NoActionBar">
         <item name="android:windowBackground">@color/nd_background</item>
         <item name="colorAccent">@color/accent</item>
         <item name="android:colorAccent">@color/accent</item>
+        <item name="colorPrimary">@color/accent</item>
+        <item name="android:colorPrimary">@color/accent</item>
+        <item name="colorPrimaryDark">@android:color/black</item>
+        <item name="android:colorPrimaryDark">@android:color/black</item>
+        <item name="android:colorBackground">@color/nd_background</item>
+        <item name="android:textColorPrimary">@android:color/white</item>
+        <item name="android:textColorSecondary">#99FFFFFF</item>
     </style>
 
     <!-- MainActivity hosts BrowseSupportFragment + ImageCardView, which require the
@@ -13,9 +20,26 @@
         <item name="android:windowBackground">@color/nd_background</item>
         <item name="colorAccent">@color/accent</item>
         <item name="android:colorAccent">@color/accent</item>
+        <item name="colorPrimary">@color/accent</item>
+        <item name="android:colorPrimary">@color/accent</item>
+        <item name="colorPrimaryDark">@android:color/black</item>
+        <item name="android:colorPrimaryDark">@android:color/black</item>
+        <item name="android:colorBackground">@color/nd_background</item>
+        <item name="android:textColorPrimary">@android:color/white</item>
+        <item name="android:textColorSecondary">#99FFFFFF</item>
     </style>
 
     <style name="Theme.TgVideoTv.Player">
         <item name="android:windowBackground">@android:color/black</item>
+    </style>
+
+    <!-- Flat charcoal button with red focus = TV-remote friendly -->
+    <style name="TgTvButton">
+        <item name="android:background">@drawable/bg_btn_dark</item>
+        <item name="android:textColor">#FFFFFFFF</item>
+        <item name="android:textSize">15sp</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:paddingStart">20dp</item>
+        <item name="android:paddingEnd">20dp</item>
     </style>
 </resources>

@@ -56,8 +56,11 @@ object TmdbClient {
     fun parseTitle(fileName: String): String {
         var t = fileName.substringBeforeLast('.')
         t = t.replace(Regex("""\[[^\]]*]|\([^)]*\)"""), " ")
+        // Unbalanced trailing paren group, e.g. "Movie.Name.(HDRip" with no ')'
+        t = t.replace(Regex("""\(\s*\S.*$"""), " ")
         t = t.replace(RELEASE_TOKENS, " ")
         t = t.replace(Regex("""[._\-]+\s*"""), " ")
+        t = t.replace(Regex("""[()\[\]:;]"""), " ")
         t = t.replace(Regex("""\s+"""), " ").trim(' ', '-')
         return t
     }
@@ -137,6 +140,16 @@ object TmdbClient {
         val collapsed = collapseDoubles(base)
         val yearless = removeYears(base)
         val attempts = linkedSetOf(base, collapsed, yearless, collapseDoubles(yearless))
+        // Truncation tolerance: forwarded/renamed files often end mid-token
+        // ("Lokah.Chapter.1.Chandra.HDRi") - retry with the trailing word(s)
+        // dropped, since the tail is almost always release junk
+        val words = base.trim().split(' ').filter { it.isNotBlank() }
+        if (words.size > 1) {
+            val cut1 = words.dropLast(1).joinToString(" ")
+            val cut2 = words.dropLast(2).ifEmpty { words.dropLast(1) }.joinToString(" ")
+            attempts.add(removeYears(cut1))
+            attempts.add(collapseDoubles(removeYears(cut2)))
+        }
         var attempted = 0
         var transportFails = 0
         var lastError: Exception? = null
@@ -374,7 +387,7 @@ object TmdbClient {
     }
 
     /** Release-scene junk that must not end up in the search query. */    private val RELEASE_TOKENS = Regex(
-        """(?i)\b(2160p|1080p|1080i|720p|576p|480p|360p|4k|uhd|hdr(?:10)?\+?|dv|hq|hd|dl|dolby|vision|x264|x265|h\.?264|h\.?265|hevc|avc|web-?dl|webrip|web|bluray|blu-ray|bdrip|brrip|dvdrip|dvdscr|hdtv|hdrip|hdts|cam|aac\d*|ac3|eac3|ddp?\d*(?:\.\d)?|dts(?:-hd)?|truehd|atmos|mp3|flac|10bit|8bit|esubs?|hc|proper|repack|extended|unrated|remastered|multi|dual(?:\s?audio)?|internal|amzn|nf|dsnp|hulu|max|itunes|netflix|yify|rargb|evo|tgx|megapek|adjutant|skillhunt|malaya|mkv|mp4|avi|m(?:kv|ov)|webm|m4v|mpg|mpeg|wmv|flv|m2ts|mts|hindi|english|tamil|telugu|malayalam|kannada|marathi|punjabi|bhojpuri|bengali|gujarati|urdu|japanese|korean|chinese|mandarin|cantonese|spanish|french|german|italian|russian|turkish|arabic|persian|portuguese)\b""",
+        """(?i)\b(2160p|1080p|1080i|720p|576p|480p|360p|4k|uhd|hdr(?:ip|10)?\+?|dv|hq|hd|dl|dolby|vision|x264|x265|h\.?264|h\.?265|hevc|avc|web-?dl|webrip|web|bluray|blu-ray|bdrip|brrip|dvdrip|dvdscr|hdtv|hdrip|hdts|cam|aac\d*|ac3|eac3|ddp?\d*(?:\.\d)?|dts(?:-hd)?|truehd|atmos|mp3|flac|10bit|8bit|esubs?|hc|proper|repack|extended|unrated|remastered|multi|dual(?:\s?audio)?|internal|amzn|nf|dsnp|hulu|max|itunes|netflix|yify|rargb|evo|tgx|megapek|adjutant|skillhunt|malaya|mkv|mp4|avi|m(?:kv|ov)|webm|m4v|mpg|mpeg|wmv|flv|m2ts|mts|hindi|english|tamil|telugu|malayalam|kannada|marathi|punjabi|bhojpuri|bengali|gujarati|urdu|japanese|korean|chinese|mandarin|cantonese|spanish|french|german|italian|russian|turkish|arabic|persian|portuguese)\b""",
     )
 
     /** Camera/auto-generated file names that must never be searched on TMDB. */

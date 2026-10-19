@@ -82,7 +82,7 @@
                         android:layout_height="52dp"
         android:background="@drawable/rating_ring"
                         android:gravity="center"
-                        android:textColor="#FF1DB954"
+                        android:textColor="@color/accent"
                         android:textSize="15sp"
                         android:fontFamily="sans-serif-medium"
                         android:visibility="gone" />
@@ -119,7 +119,7 @@
                         android:layout_height="wrap_content"
                         android:minWidth="190dp"
                         android:layout_marginStart="14dp"
-                        android:backgroundTint="#33FFFFFF"
+                        android:backgroundTint="#FF333333"
                         android:text="Add to Watchlist"
                         android:textColor="#FFFFFFFF"
                         android:textSize="16sp"

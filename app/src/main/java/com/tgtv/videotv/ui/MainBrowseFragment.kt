@@ -76,6 +76,20 @@ class MainBrowseFragment : BrowseSupportFragment() {
         adapter = rowsAdapter
         TdLib.addListener(videoUpdateListener)
         viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) { loadContent() }
+        // The leanback title is an inflating TextView; find it and brand it
+        // (bold red TGTV wordmark)
+        view.post {
+            val found = ArrayList<View>()
+            view.findViewsWithText(found, "TGTV", View.FIND_VIEWS_WITH_TEXT)
+            val tv = found.firstOrNull() as? android.widget.TextView ?: return@post
+            tv.typeface = android.graphics.Typeface.create(
+                "sans-serif-black",
+                android.graphics.Typeface.BOLD,
+            )
+            tv.textSize = 34f
+            tv.setTextColor(0xFFE50914.toInt())
+            tv.letterSpacing = -0.02f
+        }
     }
 
     override fun onDestroyView() {

@@ -23,8 +23,10 @@ import kotlin.math.max
 class VideoCardPresenter : Presenter() {
 
     companion object {
-        private const val CARD_WIDTH = 400
-        private const val CARD_HEIGHT = 225
+        // Portrait 2:3 poster card (Netflix style) - most files have no wide
+        // thumbnail but TMDB posters are nearly always available
+        private const val CARD_WIDTH = 300
+        private const val CARD_HEIGHT = 450
 
         /** thumbFileId -> decoded bitmap, shared across recycled rows. */
         private val thumbCache = HashMap<Int, android.graphics.Bitmap>()
@@ -108,7 +110,13 @@ class VideoCardPresenter : Presenter() {
                 val info = runCatching { TmdbClient.lookup(card.context, video.title) }
                     .getOrNull() ?: return@launch
                 if (card.tag != video) return@launch
-                val backdrop = info.backdropPath?.let { path ->
+                // Tall card reads best with the official poster; keep the
+                // backdrop as a fallback for titles TMDB has no poster for
+                val poster = info.posterPath?.let { path ->
+                    runCatching { loadTmdbImage("https://image.tmdb.org/t/p/w300" + path) }
+                        .getOrNull()
+                }
+                val fallback = info.backdropPath?.let { path ->
                     runCatching { loadTmdbImage("https://image.tmdb.org/t/p/w500" + path) }
                         .getOrNull()
                 }
@@ -121,8 +129,10 @@ class VideoCardPresenter : Presenter() {
                         video.prettySize().ifBlank { null },
                         video.prettyDuration().ifBlank { null },
                     ).filterNotNull().joinToString(" • ").ifBlank { video.chatTitle }
-                    if (backdrop != null) {
-                        card.mainImage = backdrop.toDrawable(card.resources)
+                    if (poster != null) {
+                        card.mainImage = poster.toDrawable(card.resources)
+                    } else if (fallback != null) {
+                        card.mainImage = fallback.toDrawable(card.resources)
                     }
                 }
             }

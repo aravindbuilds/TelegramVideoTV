@@ -96,6 +96,16 @@ class DetailsActivity : AppCompatActivity() {
         PlayerActivity.intent(this, v).let { startActivity(it) }
     }
 
+    /** IMDb-style graded score: 80+ dark green, 70 light green,
+     *  60 yellow, 50 orange, below red. */
+    private fun gradeColor(pct: Int): Int = when {
+        pct >= 80 -> 0xFF1E8449.toInt()
+        pct >= 70 -> 0xFF8BC34A.toInt()
+        pct >= 60 -> 0xFFF5C518.toInt()
+        pct >= 50 -> 0xFFEF6C00.toInt()
+        else -> 0xFFE50914.toInt()
+    }
+
     // ------------------------------------------------------------ Content
 
     private fun renderTmdb(info: TmdbClient.Info) = runOnUiThread {
@@ -107,7 +117,11 @@ class DetailsActivity : AppCompatActivity() {
                 txtTagline.visibility = View.VISIBLE
             }
             if (info.rating != null && info.rating > 0.0) {
-                txtRating.text = "${(info.rating * 10).roundToInt()}%"
+                val pct = (info.rating * 10).roundToInt()
+                val grade = gradeColor(pct)
+                txtRating.text = "$pct%"
+                txtRating.setTextColor(grade)
+                txtRating.background?.setTint(grade)
                 txtRating.visibility = View.VISIBLE
             }
             txtStatus.text = listOfNotNull(
@@ -155,7 +169,7 @@ class DetailsActivity : AppCompatActivity() {
     private fun renderWatchlistState(added: Boolean) {
         btnWatchlist.text = if (added) "✓  In Watchlist" else "Add to Watchlist"
         btnWatchlist.backgroundTintList = android.content.res.ColorStateList.valueOf(
-            if (added) 0xFF1DB954.toInt() else 0x33FFFFFF,
+            if (added) 0xFFE50914.toInt() else 0x33FFFFFF,
         )
     }
 

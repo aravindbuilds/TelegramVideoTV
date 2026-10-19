@@ -181,7 +181,7 @@
 
                 <Button
                     android:id="@+id/backButton"
-                    style="@style/Widget.AppCompat.Button"
+                    style="@style/TgTvButton"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_margin="12dp"
@@ -190,7 +190,7 @@
 
                 <Button
                     android:id="@+id/continueButton"
-                    style="@style/Widget.AppCompat.Button"
+                    style="@style/TgTvButton"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_margin="12dp"
@@ -200,7 +200,7 @@
 
             <Button
                 android:id="@+id/phoneButton"
-                style="@style/Widget.AppCompat.Button"
+                style="@style/TgTvButton"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_margin="12dp"
