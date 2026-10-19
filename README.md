@@ -171,15 +171,15 @@ Long-press a card → `DownloadService` starts (foreground, dataSync):
 
 | | |
 |---|---|
-| **App version** | v0.3 |
+| **App version** | v1.0 |
 | **Android** | 8.0 (API 26) and newer |
 | **Tested on** | Xiaomi Mi Box 4 (Android 9, armeabi-v7a) |
 | **Architectures** | two variants: **v7a** (armeabi-v7a only, ~24 MB — recommended for all devices) and **universal** (all 4 ABIs, ~96 MB — emulators/exotic arm64 devices) |
 | **Target SDK** | 35 |
 | **TDLib** | io.github.tdlib-android:core 0.1.1 (TDLib 1.8) |
 
-Downloads: see [Releases](../../releases) — grab **`TGTV-v0.3-v7a.apk`** for any Android TV or
-`TGTV-v0.3-universal.apk` for emulators, then follow the
+Downloads: see [Releases](../../releases) — grab **`TGTV-v1.0-v7a.apk`** for any Android TV or
+`TGTV-v1.0-universal.apk` for emulators, then follow the
 [Sideload guide](#sideload-install-guide) below.
 
 ---
@@ -202,12 +202,12 @@ method suits your setup — all of them end with the same APK install dialog on 
 
 ### Method A — USB drive (no computer needed)
 
-1. Copy `TGTV-v0.3-v7a.apk` to a USB stick (FAT32/exFAT both work)
+1. Copy `TGTV-v1.0-v7a.apk` to a USB stick (FAT32/exFAT both work)
 2. Plug the stick into the TV's USB port
 3. Open any **file manager** on the TV (most devices have one; if not, install
    [FX File Explorer](https://play.google.com/store/apps/details?id=nextapp.fx) or
    Solid Explorer from Play Store first)
-4. Browse to the stick → **TGTV-v0.3-v7a.apk** → press OK → **Install** → **Open**
+4. Browse to the stick → **TGTV-v1.0-v7a.apk** → press OK → **Install** → **Open**
 
 ### Method B — over your Wi-Fi (no USB, no ADB)
 
@@ -225,7 +225,7 @@ From a PC on the same Wi-Fi, in the folder containing the APK:
 
 ```powershell
 adb connect <tv-ip>:5555      # some devices use :5037, Fire TV shows the port in Settings
-adb install -r TGTV-v0.3-v7a.apk
+adb install -r TGTV-v1.0-v7a.apk
 adb shell am start -n com.tgtv.videotv/.ui.MainActivity
 ```
 
