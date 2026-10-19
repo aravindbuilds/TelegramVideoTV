@@ -14,6 +14,25 @@ class ActionPresenter : Presenter() {
     override fun onCreateViewHolder(parent: ViewGroup): ViewHolder {
         val v = LayoutInflater.from(parent.context)
             .inflate(R.layout.item_action_card, parent, false)
+        // Match the video cards: lift + red glow ring while focused
+        val d = v.resources.displayMetrics.density
+        val glow = android.graphics.drawable.GradientDrawable().apply {
+            shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+            cornerRadius = 12f * d
+            setStroke((3f * d).toInt(), 0xFFE50914.toInt())
+        }
+        v.foreground = glow
+        glow.alpha = 0
+        v.onFocusChangeListener = android.view.View.OnFocusChangeListener { view, focused ->
+            view.animate()
+                .scaleX(if (focused) 1.07f else 1f)
+                .scaleY(if (focused) 1.07f else 1f)
+                .setDuration(150)
+                .start()
+            (view.background as? android.graphics.drawable.GradientDrawable)
+                ?.setColor(if (focused) 0xFF3A3A3A.toInt() else 0xFF242424.toInt())
+            glow.alpha = if (focused) 255 else 0
+        }
         return ViewHolder(v)
     }
 

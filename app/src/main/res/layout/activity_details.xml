@@ -104,6 +104,7 @@
 
                     <Button
                         android:id="@+id/btnPlay"
+                        android:defaultFocusHighlightEnabled="true"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:minWidth="170dp"
@@ -115,6 +116,7 @@
 
                     <Button
                         android:id="@+id/btnWatchlist"
+                        android:defaultFocusHighlightEnabled="true"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:minWidth="190dp"
@@ -127,6 +129,7 @@
 
                     <Button
                         android:id="@+id/btnDownload"
+                        android:defaultFocusHighlightEnabled="true"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:minWidth="170dp"

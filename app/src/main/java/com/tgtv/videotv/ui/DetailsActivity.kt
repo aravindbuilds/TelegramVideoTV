@@ -75,6 +75,9 @@ class DetailsActivity : AppCompatActivity() {
             val added = Watchlist.toggle(this, video)
             renderWatchlistState(added)
         }
+        // TV remote reliability: without an explicitly focused view the first
+        // centre presses go nowhere - focus Play right after layout settles
+        btnPlay.post { btnPlay.requestFocus() }
         renderFileLine()
         renderVersions()
 

@@ -33,6 +33,9 @@ class VideoCardPresenter : Presenter() {
 
         /** TMDB image URL -> decoded bitmap for card backdrops. */
         private val tmdbImageCache = HashMap<String, android.graphics.Bitmap>()
+
+        /** Which card views already got their TMDB poster (thumb must not overwrite). */
+        private val tmdbApplied = java.util.WeakHashMap<View, Boolean>()
     }
 
     /** Called when the user long-presses a card. Null = no download handler attached. */
@@ -48,7 +51,29 @@ class VideoCardPresenter : Presenter() {
             setInfoAreaBackgroundColor(0xFF141414.toInt())
             mainImageView.scaleType = ImageView.ScaleType.CENTER_CROP
         }
-        return ViewHolder(card)
+        // Noticeable selection treatment: card lifts slightly and a red glow
+        // ring lights up around the whole card while focused
+        val glow = android.graphics.drawable.GradientDrawable().apply {
+            shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+            cornerRadius = 6f * parent.context.resources.displayMetrics.density
+            setStroke(
+                (3f * parent.context.resources.displayMetrics.density).toInt(),
+                0xFFE50914.toInt(),
+            )
+        }
+        card.foreground = glow
+        card.foreground.alpha = 0
+
+        return ViewHolder(card).apply {
+            view.onFocusChangeListener = android.view.View.OnFocusChangeListener { v, focused ->
+                v.animate()
+                    .scaleX(if (focused) 1.07f else 1f)
+                    .scaleY(if (focused) 1.07f else 1f)
+                    .setDuration(150)
+                    .start()
+                glow.setAlpha(if (focused) 255 else 0)
+            }
+        }
     }
 
     override fun onBindViewHolder(viewHolder: ViewHolder, item: Any) {
@@ -72,11 +97,52 @@ class VideoCardPresenter : Presenter() {
 
         // Tag prevents a recycled view showing the previous card's thumbnail
         card.mainImage = null
+        synchronized(tmdbApplied) { tmdbApplied.put(card, false) }
+
+        // TMDB enrichment runs for EVERY card (before the thumbnail early
+        // return) - cards without a Telegram thumbnail otherwise never get
+        // their poster. Poster first; backdrop as fallback.
+        if (TmdbClient.enabled(card.context)) {
+            CoroutineScope(Dispatchers.IO).launch {
+                val info = runCatching { TmdbClient.lookup(card.context, video.title) }
+                    .getOrNull() ?: return@launch
+                if (card.tag != video) return@launch
+                val poster = info.posterPath?.let { path ->
+                    runCatching { loadTmdbImage("https://image.tmdb.org/t/p/w300" + path) }
+                        .getOrNull()
+                }
+                val backdrop = if (poster == null) {
+                    info.backdropPath?.let { path ->
+                        runCatching { loadTmdbImage("https://image.tmdb.org/t/p/w500" + path) }
+                            .getOrNull()
+                    }
+                } else null
+                if (card.tag != video) return@launch
+                withContext(Dispatchers.Main) {
+                    card.titleText = info.title
+                    card.contentText = listOf(
+                        info.rating?.let { "★%.1f".format(it) },
+                        info.year?.toString(),
+                        video.prettySize().ifBlank { null },
+                        video.prettyDuration().ifBlank { null },
+                    ).filterNotNull().joinToString(" • ").ifBlank { video.chatTitle }
+                    (poster ?: backdrop)?.let { img ->
+                        synchronized(tmdbApplied) { tmdbApplied.put(card, true) }
+                        card.mainImage = img.toDrawable(card.resources)
+                    }
+                }
+            }
+        }
+
         if (video.thumbnailFileId == 0) return
 
         synchronized(thumbCache) {
             thumbCache[video.thumbnailFileId]?.let { cached ->
-                card.mainImage = cached.toDrawable(card.resources)
+                synchronized(tmdbApplied) {
+                    if (tmdbApplied[card] != true) {
+                        card.mainImage = cached.toDrawable(card.resources)
+                    }
+                }
                 return
             }
         }
@@ -97,42 +163,10 @@ class VideoCardPresenter : Presenter() {
             }.getOrNull()
             if (bmp != null && card.tag == video) {
                 withContext(Dispatchers.Main) {
-                    card.mainImage = bmp.toDrawable(card.resources)
-                }
-            }
-        }
-
-        // TMDB enrichment: swap the file name for the real title, add rating
-        // and year to the info line, and replace the card image with the
-        // official TMDB backdrop when available
-        if (TmdbClient.enabled(card.context)) {
-            CoroutineScope(Dispatchers.IO).launch {
-                val info = runCatching { TmdbClient.lookup(card.context, video.title) }
-                    .getOrNull() ?: return@launch
-                if (card.tag != video) return@launch
-                // Tall card reads best with the official poster; keep the
-                // backdrop as a fallback for titles TMDB has no poster for
-                val poster = info.posterPath?.let { path ->
-                    runCatching { loadTmdbImage("https://image.tmdb.org/t/p/w300" + path) }
-                        .getOrNull()
-                }
-                val fallback = info.backdropPath?.let { path ->
-                    runCatching { loadTmdbImage("https://image.tmdb.org/t/p/w500" + path) }
-                        .getOrNull()
-                }
-                if (card.tag != video) return@launch
-                withContext(Dispatchers.Main) {
-                    card.titleText = info.title
-                    card.contentText = listOf(
-                        info.rating?.let { "★%.1f".format(it) },
-                        info.year?.toString(),
-                        video.prettySize().ifBlank { null },
-                        video.prettyDuration().ifBlank { null },
-                    ).filterNotNull().joinToString(" • ").ifBlank { video.chatTitle }
-                    if (poster != null) {
-                        card.mainImage = poster.toDrawable(card.resources)
-                    } else if (fallback != null) {
-                        card.mainImage = fallback.toDrawable(card.resources)
+                    synchronized(tmdbApplied) {
+                        if (tmdbApplied[card] != true) {
+                            card.mainImage = bmp.toDrawable(card.resources)
+                        }
                     }
                 }
             }
@@ -143,6 +177,7 @@ class VideoCardPresenter : Presenter() {
         val card = viewHolder.view as ImageCardView
         card.mainImage = null
         card.tag = null
+        synchronized(tmdbApplied) { tmdbApplied.remove(card) }
     }
 
     private fun decodeDownscaled(path: String, w: Int, h: Int): android.graphics.Bitmap? {
