@@ -1,5 +1,7 @@
 package com.tgtv.videotv.model
 
+import java.io.Serializable
+
 /**
  * A playable video item, mapped from any Telegram message content that carries video:
  * [TdApi.MessageVideo], [TdApi.MessageVideoNote], [TdApi.MessageAnimation] or a
@@ -16,7 +18,7 @@ data class VideoItem(
     val mimeType: String,
     val fileName: String,
     val thumbnailFileId: Int,
-) {
+) : Serializable {
     fun prettySize(): String {
         val s = fileSize.toFloat()
         return when {
@@ -30,5 +32,12 @@ data class VideoItem(
         val d = durationSeconds
         if (d <= 0) return ""
         return "%02d:%02d".format(d / 60, d % 60)
+    }
+
+    /** "1h 28m" style runtime line for the details screen. */
+    fun prettyRuntime(): String {
+        val d = durationSeconds
+        if (d <= 0) return ""
+        return (if (d / 3600 > 0) "${d / 3600}h " else "") + "%02dm".format(d % 3600 / 60)
     }
 }

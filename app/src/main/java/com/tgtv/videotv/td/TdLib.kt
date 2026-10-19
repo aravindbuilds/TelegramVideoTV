@@ -152,6 +152,46 @@ object TdLib {
      */
     val liveMessages = ConcurrentHashMap<Long, MutableList<TdApi.Message>>()
 
+    /**
+     * Pulls the user's main chat list page by page via LoadChats (user
+     * sessions only - bots cannot call it). Loaded chats stream in as
+     * UpdateNewChat and land in [chatCache]. Stops when TDLib reports the
+     * list is exhausted or after a hard cap of 5 000 chats.
+     */
+    suspend fun loadChatsBlocking(limit: Int = 100) {
+        if (!isStarted) return
+        repeat(50) {
+            try {
+                send(TdApi.LoadChats(TdApi.ChatListMain(), limit))
+            } catch (_: TdError) {
+                return
+            }
+        }
+    }
+
+    /**
+     * The authorized account (fetched with GetMe after Ready). Lets the UI
+     * trust the live session type instead of the login-mode pref, which can
+     * go stale when pairing via phone QR without passing LoginActivity.
+     */
+    @Volatile
+    var me: TdApi.User? = null
+        private set
+
+    /** True when the live TDLib session is a real user account (not a bot). */
+    val sessionIsUser: Boolean get() = me?.type is TdApi.UserTypeRegular
+
+    /**
+     * Resolves [me] with GetMe if needed and returns [sessionIsUser]. Cheap
+     * once resolved; call before branching on bot/user behaviour.
+     */
+    suspend fun ensureMe(): Boolean {
+        if (me != null) return sessionIsUser
+        if (!isStarted) return false
+        me = runCatching { send(TdApi.GetMe()) as? TdApi.User }.getOrNull()
+        return sessionIsUser
+    }
+
     private var authJob: Job? = null
     private var sentParameters = false
 
@@ -208,8 +248,10 @@ object TdLib {
                     }
                     is TdApi.AuthorizationStateReady -> {
                         authJob?.cancel()
-                        // Trim the cache back under the 2 GB right after login
+                        // Identify the session (bot vs user) for UI branching
                         appScope.launch {
+                            runCatching { ensureMe() }
+                            // Trim the cache back under the 2 GB right after login
                             delay(3_000L)
                             enforceCacheCap()
                         }
@@ -312,6 +354,7 @@ object TdLib {
         latestFiles.clear()
         chatCache.clear()
         liveMessages.clear()
+        me = null
         sentParameters = false
         val c = client
         client = null

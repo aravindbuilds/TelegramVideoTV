@@ -48,6 +48,10 @@
             android:supportsPictureInPicture="false"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout"
             android:theme="@style/Theme.TgVideoTv.Player" />
+        <activity
+            android:name=".ui.DetailsActivity"
+            android:exported="false"
+            android:theme="@style/Theme.TgVideoTv" />
 
         <service
             android:name=".svc.DownloadService"

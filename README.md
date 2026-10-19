@@ -24,13 +24,17 @@ Streaming design details: see [How streaming works](#how-streaming-works) below.
 
 ## Features
 
-- Slim TV-first UI (Leanback rows / focus navigation with the remote)
+- Slim TV-first UI (Leanback rows / focus navigation with the remote, Netflix-black + red theme)
 - **Two login modes** — bot token (live-sync: videos appear as they're posted) or **phone/QR user login** (`Pair via phone` in Settings → scans Telegram's QR to authorise a full user session with complete chat history). See *Why two login modes?* below for the trade-offs.
-- Settings row in the library: Refresh / Pair via phone / Sign out; long-press a card for Play / Download
+- **Details screen for every video** — full-bleed TMDB backdrop + poster, ringing rating, runtime, status, overview, genres, Play / **Add to Watchlist** / Download buttons
+- **TMDB metadata, built in** — every file is identified by parsing its release-style name (quality tags, audio languages, group junk), with spelling-tolerant retries and a **web-assisted fallback** (Wikipedia / DuckDuckGo → canonical title → TMDB). Cards show the real title, ★ rating, year and the official TMDB backdrop
+- **Version picker** — multiple files of the same title (1080p vs 720p, language cuts) are grouped on the details screen with size/quality/audio labels; tap to play that copy
+- **My List** — watchlist row bookmarked locally on the device
+- Settings row in the library: Refresh / Pair via phone / Sign out / TMDB metadata; long-press a card for Play / Download
 - Streaming via TDLib range downloads read straight from the partial local file (no Bot API 20 MB limit, no external file hosts)
 - Seeking pulls data from the seek position (not the file start)
 - YouTube-style time-based buffering: starts with ~2 s buffered, look-ahead grows to 5 minutes of video, plus a buffering spinner
-- Real video frame thumbnails on every card (in-memory bitmap cache)
+- Real video frame thumbnails on every card (in-memory bitmap cache), newest messages first in every row
 - Embedded subtitles (MKV/MP4 text tracks) render automatically; the PlayerView CC button toggles them
 - Full download to `Movies/TgTV` via MediaStore on API >= 29, private app dir on older devices; foreground-service download with progress notifications
 - **Streaming cache hygiene** — 20 s after you exit a video, its cached bytes are deleted automatically (instant replays within those 20 s keep the cache)
@@ -162,16 +166,16 @@ Long-press a card → `DownloadService` starts (foreground, dataSync):
 
 | | |
 |---|---|
-| **App version** | v0.1.1 |
+| **App version** | v0.2 |
 | **Android** | 8.0 (API 26) and newer |
 | **Tested on** | Xiaomi Mi Box 4 (Android 9, armeabi-v7a) |
 | **Architectures** | two variants: **v7a** (armeabi-v7a only, ~24 MB — recommended for all TV boxes) and **universal** (all 4 ABIs, ~96 MB — emulators/exotic arm64 boxes) |
 | **Target SDK** | 35 |
 | **TDLib** | io.github.tdlib-android:core 0.1.1 (TDLib 1.8) |
 
-Downloads: see [Releases](../../releases) — grab **`TGVideoTV-v0.1.1-v7a.apk`** for any
+Downloads: see [Releases](../../releases) — grab **`TGVideoTV-v0.2-v7a.apk`** for any
 real TV box (works on arm64 devices too, they run v7a natively) or
-`TGVideoTV-v0.1.1-universal.apk` for emulators, then follow the
+`TGVideoTV-v0.2-universal.apk` for emulators, then follow the
 [Sideload guide](#sideload-install-guide) below.
 
 ---

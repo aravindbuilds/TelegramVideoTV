@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Netflix-inspired palette -->
+    <color name="nd_background">#FF141414</color>
+    <color name="accent">#FFE50914</color>
     <color name="background">#E5101014</color>
-    <color name="accent">#FF2EA3F6</color>
+    <color name="card_info_bg">#FF141414</color>
     <color name="ic_launcher_bg">#05070F</color>
 </resources>

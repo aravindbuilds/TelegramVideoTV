@@ -20,6 +20,7 @@ import com.tgtv.videotv.svc.DownloadService
 import com.tgtv.videotv.td.Credentials
 import com.tgtv.videotv.td.TdError
 import com.tgtv.videotv.td.TdLib
+import com.tgtv.videotv.model.Watchlist
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -32,7 +33,7 @@ class MainBrowseFragment : BrowseSupportFragment() {
     private var sentToLogin = false
 
     private val rowsAdapter = ArrayObjectAdapter(
-        ListRowPresenter(FocusHighlight.ZOOM_FACTOR_SMALL).apply { shadowEnabled = false },
+        ListRowPresenter(FocusHighlight.ZOOM_FACTOR_MEDIUM).apply { shadowEnabled = false },
     )
     private val actionsAdapter = ArrayObjectAdapter(ActionPresenter()).apply {
         addAll(
@@ -41,6 +42,7 @@ class MainBrowseFragment : BrowseSupportFragment() {
                 ActionItem(ACTION_REFRESH, "↻", "Refresh", "Reload chats and videos"),
                 ActionItem(ACTION_PAIR_VIA_PHONE, "◱", "Pair via phone", "Scan a QR with Telegram"),
                 ActionItem(ACTION_SIGN_OUT, "⎋", "Sign out", "Forget this session and start over"),
+                ActionItem(ACTION_TMDB, "★", "TMDB metadata", "Real titles, years and ratings on the cards"),
             ),
         )
     }
@@ -52,9 +54,17 @@ class MainBrowseFragment : BrowseSupportFragment() {
         isHeadersTransitionOnBackEnabled = false
         title = "TG Video TV"
         brandColor = resources.getColor(R.color.accent, null)
-        setOnItemViewClickedListener { _, item, _, _ ->
+        setOnItemViewClickedListener { _, item, _, row ->
             when (item) {
-                is VideoItem -> startActivity(PlayerActivity.intent(requireContext(), item))
+                is VideoItem -> {
+                    // Row siblings become the "Versions" list on the details screen
+                    val siblings = (row as? ListRow)?.adapter?.let { a ->
+                        (0 until a.size()).mapNotNull { a.get(it) as? VideoItem }
+                    } ?: listOf(item)
+                    startActivity(
+                        DetailsActivity.intent(requireContext(), item, siblings),
+                    )
+                }
                 is ActionItem -> onAction(item)
             }
         }
@@ -124,7 +134,60 @@ class MainBrowseFragment : BrowseSupportFragment() {
                     }
                 }
             }
+            ACTION_TMDB -> showTmdbDialog(activity)
         }
+    }
+
+    private fun showTmdbDialog(activity: Activity) {
+        val on = com.tgtv.videotv.td.TmdbClient.enabled(activity.applicationContext)
+        val override = Credentials.tmdbKey(activity)
+        val stateLine = when {
+            on && override == null -> "On, using the built-in key." +
+                " Cards show the TMDB title, year and rating."
+            on -> "On, using your custom key (${override!!.take(4)}…${override.takeLast(4)})."
+            else -> "Off."
+        }
+        activity.runOnUiThread {
+            AlertDialog.Builder(activity)
+                .setTitle("TMDB metadata")
+                .setMessage(stateLine)
+                .setPositiveButton(if (on) "Turn off" else "Turn on") { _, _ ->
+                    Credentials.setTmdbDisabled(activity, on)
+                    refreshRows()
+                }
+                .setNegativeButton("Custom key") { _, _ -> tmdbKeyInput(activity) }
+                .setNeutralButton("Cancel", null)
+                .show()
+        }
+    }
+
+    private fun tmdbKeyInput(activity: Activity) {
+        val input = android.widget.EditText(activity).apply {
+            hint = "32-character API key"
+            setSingleLine()
+        }
+        activity.runOnUiThread {
+            AlertDialog.Builder(activity)
+                .setTitle("Custom TMDB key")
+                .setMessage(
+                    "Optional: use your own key from themoviedb.org (Settings -> API) " +
+                        "instead of the built-in one.",
+                )
+                .setView(input)
+                .setPositiveButton("Save") { _, _ ->
+                    Credentials.setTmdbKey(activity, input.text.toString())
+                    Credentials.setTmdbDisabled(activity, false)
+                    refreshRows()
+                }
+                .setNeutralButton("Back", null)
+                .show()
+        }
+    }
+
+    private fun refreshRows() {
+        rowsAdapter.clear()
+        loading = false
+        viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) { loadContent() }
     }
 
     private fun showVideoMenu(item: VideoItem) {
@@ -212,15 +275,23 @@ class MainBrowseFragment : BrowseSupportFragment() {
     }
 
     private suspend fun buildRows(activity: Activity) {
-        val rows = collectChats()
-            .mapNotNull { chat ->
-                val videos = videosFor(chat)
-                if (videos.isEmpty()) null else VideoRow.from(chat, videos, hasMore = false)
-            }
+        val rows = mutableListOf<VideoRow>()
+        // The whole watchlist leads the screen like a Netflix "My List" row
+        val saved = Watchlist.all(activity)
+        if (saved.isNotEmpty()) {
+            rows.add(VideoRow(-1L, "My List", saved, hasMore = false))
+        }
+        rows.addAll(
+            collectChats()
+                .mapNotNull { chat ->
+                    val videos = videosFor(chat)
+                    if (videos.isEmpty()) null else VideoRow.from(chat, videos, hasMore = false)
+                },
+        )
         activity.runOnUiThread {
             rowsAdapter.clear()
             if (rows.isEmpty()) {
-                val isUser = Credentials.loginMode(activity) == Credentials.MODE_USER
+                val isUser = TdLib.sessionIsUser
                 status(
                     activity,
                     if (isUser) {
@@ -249,10 +320,15 @@ class MainBrowseFragment : BrowseSupportFragment() {
     /**
      * Bots cannot call LoadChats/GetChats (TDLib 1.8+: "not available to bots"),
      * so wait for the UpdateNewChat stream TDLib delivers after Ready and use
-     * the cached chats.
+     * the cached chats. User sessions must actively page their chat list with
+     * LoadChats - chats do not arrive spontaneously for real accounts.
      */
     private suspend fun collectChats(): List<TdApi.Chat> {
-        val deadline = withTimeoutOrNull(10_000L) {
+        // Trust the live session type (GetMe) - the login-mode pref can be
+        // stale after pairing via phone QR without passing LoginActivity
+        val isUser = TdLib.ensureMe()
+        if (isUser) TdLib.loadChatsBlocking()
+        val deadline = withTimeoutOrNull(if (isUser) 25_000L else 10_000L) {
             while (TdLib.chatCache.isEmpty()) delay(250)
             true
         }
@@ -273,34 +349,44 @@ class MainBrowseFragment : BrowseSupportFragment() {
      *   live-captured messages instead.
      */
     private suspend fun videosFor(chat: TdApi.Chat): List<VideoItem> {
-        val all = mutableListOf<VideoItem>()
+        val pairs = mutableListOf<Pair<TdApi.Message, VideoItem>>()
         val context = context
         val isUser = context != null &&
-            Credentials.loginMode(context) == Credentials.MODE_USER
+            (TdLib.sessionIsUser || Credentials.loginMode(context) == Credentials.MODE_USER)
 
         if (isUser) {
             runCatching {
                 TdLib.send(TdApi.GetChatHistory(chat.id, 0, 0, LIMIT, false))
             }.onSuccess { hist ->
-                hist.messages?.forEach { VideoMapper.mapMessage(it, chat.title)?.let { v -> all.add(v) } }
+                hist.messages?.forEach {
+                    VideoMapper.mapMessage(it, chat.title)?.let { v -> pairs.add(it to v) }
+                }
             }
 
-            if (all.size < LIMIT) {
+            if (pairs.size < LIMIT) {
                 for (filter in VideoMapper.filters) {
                     runCatching {
                         TdLib.send(
                             TdApi.SearchChatMessages(chat.id, null, "", null, 0L, 0, LIMIT, filter),
                         )
                     }.onSuccess { found ->
-                        found.messages?.forEach { VideoMapper.mapMessage(it, chat.title)?.let { v -> all.add(v) } }
+                        found.messages?.forEach {
+                            VideoMapper.mapMessage(it, chat.title)?.let { v -> pairs.add(it to v) }
+                        }
                     }
                 }
             }
         }
 
         // Live-captured videos work for both modes; bots rely on them exclusively
-        TdLib.liveMessages[chat.id]?.forEach { VideoMapper.mapMessage(it, chat.title)?.let { v -> all.add(v) } }
-        return all.distinctBy { it.messageId }.take(LIMIT)
+        TdLib.liveMessages[chat.id]?.forEach {
+            VideoMapper.mapMessage(it, chat.title)?.let { v -> pairs.add(it to v) }
+        }
+        // Newest message first
+        return pairs.distinctBy { it.first.id }
+            .sortedByDescending { it.first.date }
+            .map { it.second }
+            .take(LIMIT)
     }
 
     private fun status(activity: Activity, message: String?) {
@@ -312,5 +398,6 @@ class MainBrowseFragment : BrowseSupportFragment() {
         const val ACTION_REFRESH = 1
         const val ACTION_PAIR_VIA_PHONE = 2
         const val ACTION_SIGN_OUT = 3
+        const val ACTION_TMDB = 4
     }
 }

@@ -10,6 +10,8 @@ object Credentials {
     const val KEY_API_HASH = "api_hash"
     const val KEY_BOT_TOKEN = "bot_token"
     const val KEY_LOGIN_MODE = "login_mode"
+    const val KEY_TMDB_KEY = "tmdb_key"
+    const val KEY_TMDB_DISABLED = "tmdb_disabled"
     const val MODE_BOT = "bot"
     const val MODE_USER = "user"
 
@@ -46,4 +48,20 @@ object Credentials {
     fun apiId(context: Context): Int = prefs(context).getInt(KEY_API_ID, 0)
     fun apiHash(context: Context): String? = prefs(context).getString(KEY_API_HASH, null)
     fun botToken(context: Context): String? = prefs(context).getString(KEY_BOT_TOKEN, null)
+
+    /** Bring-your-own TMDB API key for metadata (title/year/rating); null when unset. */
+    fun tmdbKey(context: Context): String? = prefs(context).getString(KEY_TMDB_KEY, null)
+
+    fun setTmdbKey(context: Context, key: String?) {
+        prefs(context).edit()
+            .putString(KEY_TMDB_KEY, key?.trim()?.takeIf { it.isNotBlank() })
+            .apply()
+    }
+
+    /** Metadata is on by default (built-in key); this is the manual off switch. */
+    fun tmdbDisabled(context: Context): Boolean = prefs(context).getBoolean(KEY_TMDB_DISABLED, false)
+
+    fun setTmdbDisabled(context: Context, disabled: Boolean) {
+        prefs(context).edit().putBoolean(KEY_TMDB_DISABLED, disabled).apply()
+    }
 }
