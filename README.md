@@ -5,11 +5,11 @@
 [![License](https://img.shields.io/github/license/aravindbuilds/TelegramVideoTV)](LICENSE)
 
 **Turn your Telegram into a private Netflix for your TV.** TG Video TV is a free, open-source
-Android TV app that you sideload onto your TV box to browse, stream and download videos stored
+Android TV app that you sideload onto your Android TV to browse, stream and download videos stored
 in your Telegram account — Saved Messages, private library groups, channels.
 No ads. No upload limits. Your Telegram account *is* the server.
 
-- **Runs on**: Xiaomi Mi Box, NVIDIA Shield, Fire TV (sideload), Chromecast with Google TV, and any Android 8.0+ TV box
+- **Runs on**: Xiaomi Mi Box, NVIDIA Shield, Fire TV (sideload), Chromecast with Google TV, and any Android TV running Android 8.0+
 - **Works with**: Telegram groups, channels, Saved Messages — videos travel as documents and still play
 - **Stack**: Kotlin · TDLib · Leanback · Media3 / ExoPlayer
 
@@ -43,8 +43,8 @@ Streaming design details: see [How streaming works](#how-streaming-works) below.
 ## Known limitations
 
 - **Bots have no chat history** — Telegram's server refuses `LoadChats` / `GetChatHistory` / `SearchChatMessages` for bot accounts. Bot mode is live-only: the library fills as videos are posted to groups the bot is a member of. For full history use the **QR phone login** instead.
-- **Exotic codecs** — playback decoded by the TV box's hardware codecs; AVI/DTS-style media may fail on some android TVs.
-- **Streaming accumulates on disk** — streamed bytes are cached by TDLib as they are watched (roughly the whole file by the end of a full playthrough, plus look-ahead). The cache is purged ~20 s after you exit and capped at 2 GB while idle, but *during* playback local usage grows with what you have watched — TDLib has no API to trim a streaming file's already-read prefix. Files bigger than the box's free `/data` space cannot stream fully: the player warns at start (preflight) and pauses before storage runs out instead of dying mid-play. For huge files use a TV with more storage, or point the TDLib cache root at USB storage (Settings toggle on the roadmap).
+- **Exotic codecs** — playback decoded by your Android TV's hardware codecs; AVI/DTS-style media may fail on some android TVs.
+- **Streaming accumulates on disk** — streamed bytes are cached by TDLib as they are watched (roughly the whole file by the end of a full playthrough, plus look-ahead). The cache is purged ~20 s after you exit and capped at 2 GB while idle, but *during* playback local usage grows with what you have watched — TDLib has no API to trim a streaming file's already-read prefix. Files bigger than the device's free `/data` space cannot stream fully: the player warns at start (preflight) and pauses before storage runs out instead of dying mid-play. For huge files use a TV with more storage, or point the TDLib cache root at USB storage (Settings toggle on the roadmap).
 - One video per chat can download at a time (foreground service processes a single job; parallel queueing is a TODO).
 - Thumbnails are optional — if a video has no thumbnail its card is blank but still playable.
 
@@ -170,12 +170,11 @@ Long-press a card → `DownloadService` starts (foreground, dataSync):
 | **App version** | v0.2 |
 | **Android** | 8.0 (API 26) and newer |
 | **Tested on** | Xiaomi Mi Box 4 (Android 9, armeabi-v7a) |
-| **Architectures** | two variants: **v7a** (armeabi-v7a only, ~24 MB — recommended for all TV boxes) and **universal** (all 4 ABIs, ~96 MB — emulators/exotic arm64 boxes) |
+| **Architectures** | two variants: **v7a** (armeabi-v7a only, ~24 MB — recommended for all devices) and **universal** (all 4 ABIs, ~96 MB — emulators/exotic arm64 devices) |
 | **Target SDK** | 35 |
 | **TDLib** | io.github.tdlib-android:core 0.1.1 (TDLib 1.8) |
 
-Downloads: see [Releases](../../releases) — grab **`TGVideoTV-v0.2-v7a.apk`** for any
-real TV box (works on arm64 devices too, they run v7a natively) or
+Downloads: see [Releases](../../releases) — grab **`TGVideoTV-v0.2-v7a.apk`** for any Android TV or
 `TGVideoTV-v0.2-universal.apk` for emulators, then follow the
 [Sideload guide](#sideload-install-guide) below.
 
@@ -201,7 +200,7 @@ method suits your setup — all of them end with the same APK install dialog on 
 
 1. Copy `TGVideoTV-v0.1.apk` to a USB stick (FAT32/exFAT both work)
 2. Plug the stick into the TV's USB port
-3. Open any **file manager** on the TV (most boxes have one; if not, install
+3. Open any **file manager** on the TV (most devices have one; if not, install
    [FX File Explorer](https://play.google.com/store/apps/details?id=nextapp.fx) or
    Solid Explorer from Play Store first)
 4. Browse to the stick → **TGVideoTV-v0.1.apk** → press OK → **Install** → **Open**
@@ -216,12 +215,12 @@ method suits your setup — all of them end with the same APK install dialog on 
 
 *(Any LAN transfer app works the same way: LocalSend, TV File Transfer, etc.)*
 
-### Method C — ADB over the network (if the box has no file manager and no Play Store)
+### Method C — ADB over the network (if the TV has no file manager and no Play Store)
 
 From a PC on the same Wi-Fi, in the folder containing the APK:
 
 ```powershell
-adb connect <tv-ip>:5555      # some boxes use :5037, Fire TV shows the port in Settings
+adb connect <tv-ip>:5555      # some devices use :5037, Fire TV shows the port in Settings
 adb install -r TGVideoTV-v0.1.apk
 adb shell am start -n com.tgtv.videotv/.ui.MainActivity
 ```
@@ -235,8 +234,8 @@ or connect once with USB-ADB (Fire TV: Settings → My Fire TV → Developer opt
 |---|---|
 | "App not installed" mid-install | Internal storage full — delete unused apps/empty app caches, then retry |
 | Install button does nothing after "unknown apps" toggle | Re-do Step 0 and toggle the *actual app performing the install* |
-| Wrong-architecture APK | Not possible here — the APK ships armeabi-v7a which every TV box runs |
-| Launch opens nothing | Reboot the box once after install, then reopen |
+| Wrong-architecture APK | Not possible here — the APK ships armeabi-v7a which every Android TV runs |
+| Launch opens nothing | Reboot the TV once after install, then reopen |
 
 After install, continue with **[Setup (5 minutes)](#setup-5-minutes)**.
 
@@ -280,7 +279,7 @@ Scanning the QR (Settings → *Pair via phone*) logs the TV in as **your own Tel
 
 ## Build & install
 
-Open the project root in **Android Studio** → let Gradle sync (fetches `io.github.tdlib-android:core:0.1.1` (~40 MB AAR) from Maven Central) → Run target is an Android TV box / emulator.
+Open the project root in **Android Studio** → let Gradle sync (fetches `io.github.tdlib-android:core:0.1.1` (~40 MB AAR) from Maven Central) → Run target is an Android TV or emulator.
 
 Via terminal (Network-connected TV):
 
@@ -297,3 +296,4 @@ No wrapper jar is committed, so command-line `gradlew` needs a local Gradle inst
 - **Paging / infinite scroll** (user mode only — bots can't search history): `searchChatMessages` with `nextFromMessageId` (already returned in `FoundChatMessages`).
 - **Storage-curve UI**: expose `TdLib.enforceCacheCap()` and the measured cache size in a Settings action ("Clear cache").
 - **Multi-download queue**: hold a `ConcurrentLinkedQueue<VideoItem>` in `DownloadService` instead of the single-job guard.
+
