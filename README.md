@@ -103,8 +103,10 @@ your files never leave the Telegram network on the way to your screen. No Bot AP
 ### 1. Install TGTV on your TV
 
 Grab the APK from [Releases](https://github.com/aravindbuilds/TelegramVideoTV/releases):
-**`TGTV-v1.2-v7a.apk`** for any Android TV (~24 MB; works on every device including arm64/x86 ones)
-or **`TGTV-v1.2-universal.apk`** for emulators (~96 MB).
+**`TGTV-v1.1-v7a.apk`** (stable) for any Android TV (~24 MB; works on every device including
+arm64/x86 ones), or **`TGTV-v1.2-v7a.apk`** (beta — Saved-Messages privacy +
+Add-chats settings) if you like living on the edge. A **`-universal`** variant of
+each (~96 MB, all 4 ABIs) exists for emulators.
 
 Android TVs have no app store for this, so you **sideload** it. Pick whichever method
 suits you — all end with the same APK install dialog on the TV.
@@ -120,12 +122,13 @@ suits you — all end with the same APK install dialog on the TV.
 
 **Method A — USB drive (no computer, no internet tricks)**
 
-1. Copy `TGTV-v1.2-v7a.apk` to a USB stick (FAT32/exFAT both work)
+1. Copy the APK you picked (`TGTV-v1.1-v7a.apk` or the v1.2 beta) to a USB stick
+   (FAT32/exFAT both work)
 2. Plug the stick into the TV's USB port
 3. Open any **file manager** on the TV (most devices have one; if not, install
    [FX File Explorer](https://play.google.com/store/apps/details?id=nextapp.fx) or
    Solid Explorer from Play Store first)
-4. Browse to the stick → **TGTV-v1.2-v7a.apk** → press OK → **Install** → **Open**
+4. Browse to the stick → select the APK → press OK → **Install** → **Open**
 
 **Method B — over Wi-Fi (no USB, no ADB)**
 
@@ -143,7 +146,7 @@ From a PC on the same Wi-Fi, in the folder containing the APK:
 
 ```powershell
 adb connect <tv-ip>:5555      # some devices use :5037, Fire TV shows the port in Settings
-adb install -r TGTV-v1.2-v7a.apk
+adb install -r TGTV-v1.1-v7a.apk      # or the v1.2 beta APK
 adb shell am start -n com.tgtv.videotv/.ui.MainActivity
 ```
 
@@ -240,7 +243,7 @@ again after every restart.
 
 | | |
 |---|---|
-| **App version** | v1.2 |
+| **App version** | v1.2 (beta) — latest stable: v1.1 |
 | **Android** | 8.0 (API 26) and newer |
 | **Tested on** | Xiaomi Mi Box 4 (Android 9, armeabi-v7a) |
 | **Variants** | **v7a** (armeabi-v7a only, ~24 MB — recommended for all devices) and **universal** (all 4 ABIs, ~96 MB — emulators / exotic arm64 devices) |
