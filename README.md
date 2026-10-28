@@ -22,6 +22,16 @@ No ads. No upload limits. Your Telegram account *is* the server.
 
 **Start here:** [Install on your TV](#1-install-tgtv-on-your-tv) → [Create a bot token](#2-get-a-bot-token) → [Log in](#3-log-in-on-the-tv). Two 5-minute steps.
 
+## What's new in v1.2
+
+- **User login is private by default** — QR (phone) sessions now show only
+  **Saved Messages** instead of every chat on the account. Your other chats,
+  groups and personal media never reach the shared TV screen.
+- **Add chats (Settings)** — want more than Saved Messages? *Settings → Add chats*
+  shows a checkbox list of every chat this session knows; pin any chat or group to
+  the library and it appears as its own row. Unpin to hide it again. Bot sessions
+  can pin too (it also persists their chat list across restarts).
+
 ## What's new in v1.1
 
 - **No API keys needed on the TV** — the shared Telegram app credentials are compiled into
@@ -93,8 +103,8 @@ your files never leave the Telegram network on the way to your screen. No Bot AP
 ### 1. Install TGTV on your TV
 
 Grab the APK from [Releases](https://github.com/aravindbuilds/TelegramVideoTV/releases):
-**`TGTV-v1.1-v7a.apk`** for any Android TV (~24 MB; works on every device including arm64/x86 ones)
-or **`TGTV-v1.1-universal.apk`** for emulators (~96 MB).
+**`TGTV-v1.2-v7a.apk`** for any Android TV (~24 MB; works on every device including arm64/x86 ones)
+or **`TGTV-v1.2-universal.apk`** for emulators (~96 MB).
 
 Android TVs have no app store for this, so you **sideload** it. Pick whichever method
 suits you — all end with the same APK install dialog on the TV.
@@ -110,12 +120,12 @@ suits you — all end with the same APK install dialog on the TV.
 
 **Method A — USB drive (no computer, no internet tricks)**
 
-1. Copy `TGTV-v1.1-v7a.apk` to a USB stick (FAT32/exFAT both work)
+1. Copy `TGTV-v1.2-v7a.apk` to a USB stick (FAT32/exFAT both work)
 2. Plug the stick into the TV's USB port
 3. Open any **file manager** on the TV (most devices have one; if not, install
    [FX File Explorer](https://play.google.com/store/apps/details?id=nextapp.fx) or
    Solid Explorer from Play Store first)
-4. Browse to the stick → **TGTV-v1.1-v7a.apk** → press OK → **Install** → **Open**
+4. Browse to the stick → **TGTV-v1.2-v7a.apk** → press OK → **Install** → **Open**
 
 **Method B — over Wi-Fi (no USB, no ADB)**
 
@@ -133,7 +143,7 @@ From a PC on the same Wi-Fi, in the folder containing the APK:
 
 ```powershell
 adb connect <tv-ip>:5555      # some devices use :5037, Fire TV shows the port in Settings
-adb install -r TGTV-v1.1-v7a.apk
+adb install -r TGTV-v1.2-v7a.apk
 adb shell am start -n com.tgtv.videotv/.ui.MainActivity
 ```
 
@@ -163,8 +173,9 @@ this is the only single stop:
    you deliberately post or forward there will appear on the TV.
 2. On the TV, open TGTV → choose **Bot token** → paste the token → *Save and connect*.
    (Prefer no bot at all? Choose **QR login** on the TV's login screen and scan the
-   code with your phone — Settings & Devices → Link Desktop Device — to log in as
-   *your own account* with your full chat history.)
+   code with your phone — Settings & Devices → Link Desktop Device. That logs in as
+   *your own account* and shows only your **Saved Messages** — send a video to
+   yourself there and it appears on the TV.)
 3. Post or forward a video into the library group → it should appear as a row
    on the TV within seconds.
 
@@ -187,15 +198,16 @@ this is the only single stop:
 | | **Bot mode (recommended)** | **QR user login** |
 |---|---|---|
 | Log in as | your @BotFather bot | your own Telegram account |
-| Library source | a private group/channel you curate | your real account: every chat & full history |
-| History | **live only** (Telegram forbids bots from reading history) | complete archive |
-| Curation boundary | total — nothing else from your account ever appears | none — everything the account can see is browsable |
+| Library source | a private group/channel you curate | **Saved Messages**, plus any chats you pin in Settings → Add chats |
+| History | **live only** (Telegram forbids bots from reading history) | full history of Saved Messages and pinned chats |
+| Curation boundary | total — nothing else from your account ever appears | total — nothing else from your account ever appears |
 | Resilience | library survives restarts instantly via the local index (v1.1) | same |
 
-**Recommendation:** bot mode as the daily driver — it is the "TV library appliance"
-pattern: a private group you own, the bot as librarian, you decide exactly what shows.
-QR login when you specifically need old content (pull a channel's full history),
-then switch back (Settings → *Sign out*).
+**Recommendation:** either mode keeps the rest of your account private; pick by
+workflow. Bot mode is the "TV library appliance" — a private group you own, the bot
+as librarian, manage it from any device. QR login skips the bot entirely: send or
+forward a video to **Saved Messages** on your phone and it appears on the TV, with
+its full history intact.
 
 In v1.1 the "bots can't read history" limitation mostly disappears in practice: once
 a video has been captured live, it is stored in the local library index and shows
@@ -206,7 +218,10 @@ again after every restart.
 - **Bot live-only history** — Telegram's server refuses history requests for bot
   accounts. The local index keeps everything the bot has *seen* in this session's DB
   forever, but the first-ever content must arrive once while the app is connected.
-  For full history use the **QR phone login**.
+- **QR login is Saved Messages only (by default)** — a deliberate privacy boundary:
+  user sessions could technically read everything, so TGTV pins them to Saved
+  Messages to keep the rest of your account off the shared screen. Use
+  **Settings → Add chats** to pin specific chats or groups you *do* want.
 - **Exotic codecs** — playback relies on the TV's hardware codecs; AVI/DTS media may
   fail on some Android TVs.
 - **Storage during long movies** — streamed bytes are cached by TDLib as they are
@@ -225,7 +240,7 @@ again after every restart.
 
 | | |
 |---|---|
-| **App version** | v1.1 |
+| **App version** | v1.2 |
 | **Android** | 8.0 (API 26) and newer |
 | **Tested on** | Xiaomi Mi Box 4 (Android 9, armeabi-v7a) |
 | **Variants** | **v7a** (armeabi-v7a only, ~24 MB — recommended for all devices) and **universal** (all 4 ABIs, ~96 MB — emulators / exotic arm64 devices) |
@@ -392,5 +407,3 @@ TelegramVideoTV/
   as a Settings action ("Clear cache").
 - **Multi-download queue**: hold a `ConcurrentLinkedQueue<VideoItem>` in
   `DownloadService` instead of the single-job guard.
-- **Scoped library for user mode**: a chat filter so QR sessions can pin only chosen
-  groups (currently the account's whole archive is browsable).

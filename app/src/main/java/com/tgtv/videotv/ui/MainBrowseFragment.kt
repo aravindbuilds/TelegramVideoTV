@@ -41,6 +41,7 @@ class MainBrowseFragment : BrowseSupportFragment() {
             0,
             listOf(
                 ActionItem(ACTION_REFRESH, "↻", "Refresh", "Reload chats and videos"),
+                ActionItem(ACTION_ADD_CHATS, "✚", "Add chats", "Pin chats or groups to the library"),
                 ActionItem(ACTION_PAIR_VIA_PHONE, "◱", "Pair via phone", "Scan a QR with Telegram"),
                 ActionItem(ACTION_SIGN_OUT, "⎋", "Sign out", "Forget this session and start over"),
                 ActionItem(ACTION_TMDB, "★", "TMDB metadata", "Real titles, years and ratings on the cards"),
@@ -161,6 +162,7 @@ class MainBrowseFragment : BrowseSupportFragment() {
             }
             ACTION_TMDB -> showTmdbDialog(activity)
             ACTION_SUBS -> showSubtitlesDialog(activity)
+            ACTION_ADD_CHATS -> showLibraryChatsDialog(activity)
         }
     }
 
@@ -433,7 +435,9 @@ class MainBrowseFragment : BrowseSupportFragment() {
                 status(
                     activity,
                     if (isUser) {
-                        "No videos found yet.\nPost or forward videos in a chat, then press Refresh."
+                        "No videos in Saved Messages yet.\n" +
+                            "On your phone, send or forward a video to \"Saved Messages\",\n" +
+                            "then press Refresh - or pin more chats: Settings -> Add chats."
                     } else {
                         "Bots cannot read chat history, but what you have seen\n" +
                             "is already saved here - forward or post a new video too.\n" +
@@ -456,17 +460,37 @@ class MainBrowseFragment : BrowseSupportFragment() {
     }
 
     /**
-     * Bots cannot call LoadChats/GetChats (TDLib 1.8+: "not available to bots"),
-     * so wait for the UpdateNewChat stream TDLib delivers after Ready and use
-     * the cached chats. User sessions must actively page their chat list with
-     * LoadChats - chats do not arrive spontaneously for real accounts.
+     * The library's chat list.
+     * - User sessions (phone QR): pinned to Saved Messages only — the whole
+     *   account stays private on a shared TV.
+     * - Bots cannot call LoadChats/GetChats (TDLib 1.8+: "not available to
+     *   bots"), so wait for the UpdateNewChat stream TDLib delivers after
+     *   Ready and use the cached chats.
      */
     private suspend fun collectChats(): List<TdApi.Chat> {
         // Trust the live session type (GetMe) - the login-mode pref can be
         // stale after pairing via phone QR without passing LoginActivity
         val isUser = TdLib.ensureMe()
-        if (isUser) TdLib.loadChatsBlocking()
-        val deadline = withTimeoutOrNull(if (isUser) 25_000L else 10_000L) {
+        if (isUser) {
+            // Phone/QR user sessions can see the entire account, which is
+            // overwhelming (and privacy-hostile) on a shared TV. Pin the
+            // library to Saved Messages by default - the one chat that
+            // exists precisely for this "send it to my TV" use. The Saved
+            // Messages chat id IS the user's own id, so GetChat resolves it
+            // directly without paging the whole chat list. Anything the
+            // user added via Settings -> Add chats joins it.
+            val userId = TdLib.me?.id ?: return emptyList()
+            val chats = mutableListOf<TdApi.Chat>()
+            runCatching { TdLib.send(TdApi.GetChat(userId)) as? TdApi.Chat }
+                .getOrNull()?.let { chats.add(it) }
+            val savedId = chats.firstOrNull()?.id
+            pinnedChatIds().filter { it != savedId }.forEach { id ->
+                runCatching { TdLib.send(TdApi.GetChat(id)) as? TdApi.Chat }
+                    .getOrNull()?.let { chats.add(it) }
+            }
+            return chats
+        }
+        val deadline = withTimeoutOrNull(10_000L) {
             while (TdLib.chatCache.isEmpty()) delay(250)
             true
         }
@@ -500,6 +524,65 @@ class MainBrowseFragment : BrowseSupportFragment() {
             )
         }
         return chats.sortedByDescending { it.lastMessage?.date ?: storedDates[it.id] ?: 0 }
+    }
+
+    /** Chat ids pinned from Settings -> Add chats, as Longs. */
+    private fun pinnedChatIds(): List<Long> =
+        context?.let { Credentials.libraryChats(it).mapNotNull { s -> s.toLongOrNull() } }
+            ?: emptyList()
+
+    /**
+     * Settings -> Add chats: a multi-select of every chat this session knows
+     * (chat list for user sessions, chat cache + local index for bots).
+     * Pinned chats join Saved Messages in the library; unpinning hides their
+     * rows again. Titles come from the live cache, falling back to the local
+     * index so never-opened chats still read sensibly.
+     */
+    private fun showLibraryChatsDialog(activity: Activity) {
+        viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
+            val isUser = TdLib.ensureMe()
+            if (isUser) TdLib.loadChatsBlocking()
+            val storedTitles = context
+                ?.let { VideoLibrary.chatIds(it).associate { (id, title, _) -> id to title } }
+                ?: emptyMap()
+            val candidates = (TdLib.chatCache.values.map { it.id } + storedTitles.keys)
+                .distinct()
+                .filter { it != TdLib.me?.id }
+                .map { id ->
+                    TdLib.chatCache[id]
+                        ?: TdApi.Chat().apply {
+                            this.id = id
+                            title = storedTitles[id] ?: "Chat $id"
+                        }
+                }
+                .sortedByDescending { it.lastMessage?.date ?: 0 }
+            if (candidates.isEmpty()) {
+                activity.runOnUiThread {
+                    Toast.makeText(activity, "No chats seen yet - press Refresh first", Toast.LENGTH_SHORT).show()
+                }
+                return@launch
+            }
+            val pinned = Credentials.libraryChats(activity).toMutableSet()
+            activity.runOnUiThread {
+                val titles = candidates.map { it.title.ifBlank { "Chat ${it.id}" } }
+                val checked = candidates.map { it.id.toString() in pinned }.toBooleanArray()
+                AlertDialog.Builder(activity)
+                    .setTitle("Library chats")
+                    .setMultiChoiceItems(
+                        titles.toTypedArray(),
+                        checked,
+                    ) { _, which, isChecked ->
+                        val id = candidates[which].id.toString()
+                        if (isChecked) pinned.add(id) else pinned.remove(id)
+                    }
+                    .setPositiveButton("Save") { _, _ ->
+                        Credentials.setLibraryChats(activity, pinned)
+                        refreshRows()
+                    }
+                    .setNegativeButton("Cancel", null)
+                    .show()
+            }
+        }
     }
 
     /**
@@ -577,6 +660,7 @@ class MainBrowseFragment : BrowseSupportFragment() {
         const val ACTION_SIGN_OUT = 3
         const val ACTION_TMDB = 4
         const val ACTION_SUBS = 5
+        const val ACTION_ADD_CHATS = 6
 
         /** Set when a Remove happens elsewhere; guarantees a row rebuild. */
         var forceRebuild = false

@@ -17,6 +17,7 @@ object Credentials {
     const val KEY_SUBS_LANGS = "subs_langs"
     const val KEY_OPENSUBS_KEY = "opensubtitles_key"
     const val KEY_SUBS_TEXT_SIZE = "subs_text_size"
+    const val KEY_LIBRARY_CHATS = "library_chats"
     const val MODE_BOT = "bot"
     const val MODE_USER = "user"
 
@@ -118,5 +119,22 @@ object Credentials {
         prefs(context).edit()
             .putString(KEY_OPENSUBS_KEY, key?.trim()?.takeIf { it.isNotBlank() })
             .apply()
+    }
+
+    // ------------------------------------------------------------------
+    // Library chats (Settings -> Add chats)
+    // ------------------------------------------------------------------
+
+    /**
+     * Chat ids the user manually pinned to the library from Settings. User
+     * (phone/QR) sessions are pinned to Saved Messages by default; anything
+     * added here is shown alongside it. Bot sessions discover chats live,
+     * but pinning still works and adds persistence across restarts.
+     */
+    fun libraryChats(context: Context): Set<String> =
+        prefs(context).getStringSet(KEY_LIBRARY_CHATS, emptySet()) ?: emptySet()
+
+    fun setLibraryChats(context: Context, ids: Set<String>) {
+        prefs(context).edit().putStringSet(KEY_LIBRARY_CHATS, ids).apply()
     }
 }
