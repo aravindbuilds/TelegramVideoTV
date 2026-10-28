@@ -22,7 +22,7 @@ No ads. No upload limits. Your Telegram account *is* the server.
 
 **Start here:** [Install on your TV](#1-install-tgtv-on-your-tv) → [Create a bot token](#2-get-a-bot-token) → [Log in](#3-log-in-on-the-tv). Two 5-minute steps.
 
-## What's new in v1.2
+## What's new in v1.2 (beta)
 
 - **User login is private by default** — QR (phone) sessions now show only
   **Saved Messages** instead of every chat on the account. Your other chats,
@@ -31,6 +31,13 @@ No ads. No upload limits. Your Telegram account *is* the server.
   shows a checkbox list of every chat this session knows; pin any chat or group to
   the library and it appears as its own row. Unpin to hide it again. Bot sessions
   can pin too (it also persists their chat list across restarts).
+- **Subtitles just work — no API key needed** — the OpenSubtitles.com key is now
+  compiled into the release APK (like the Telegram credentials), so automatic
+  subtitle fallback needs zero setup. All "please add your API key" prompts are gone.
+- **"Add subtitles" in the player** — *Settings → Add subtitles (OpenSubtitles)*
+  while watching searches OpenSubtitles on demand and side-loads the SRT without
+  losing your position — handy when the file's embedded subs are wrong or missing
+  a language.
 
 ## What's new in v1.1
 
@@ -74,10 +81,10 @@ No ads. No upload limits. Your Telegram account *is* the server.
 - YouTube-style time-based buffering: starts with ~2 s buffered, look-ahead grows to
   5 minutes of video
 - **Resume / Continue watching** — position saved locally, cleared after finishing
-- Embedded subtitles plus **OpenSubtitles.com fallback** (bring your own free API key:
-  Settings → Subtitles) matched by TMDB ID and side-loaded without losing position
-- Player settings: subtitles/audio track/speed/quality cap, reachable from MENU/INFO
-  and the on-screen gear button
+- Embedded subtitles plus **OpenSubtitles.com fallback** (key built into release
+  builds) matched by TMDB ID and side-loaded without losing position
+- Player settings: subtitles/audio track/speed/quality cap plus on-demand
+  **Add subtitles (OpenSubtitles)**, reachable from MENU/INFO and the gear button
 
 **Storage & downloads**
 - Full download to `Movies/TgTV` via MediaStore on API ≥ 29, private app dir on older
@@ -104,9 +111,9 @@ your files never leave the Telegram network on the way to your screen. No Bot AP
 
 Grab the APK from [Releases](https://github.com/aravindbuilds/TelegramVideoTV/releases):
 **`TGTV-v1.1-v7a.apk`** (stable) for any Android TV (~24 MB; works on every device including
-arm64/x86 ones), or **`TGTV-v1.2-v7a.apk`** (beta — Saved-Messages privacy +
-Add-chats settings) if you like living on the edge. A **`-universal`** variant of
-each (~96 MB, all 4 ABIs) exists for emulators.
+arm64/x86 ones), or the **beta** (`TGTV-v1.2-v7a.apk` — Saved-Messages privacy,
+Add-chats picker, subtitles built in, on-demand "Add subtitles").
+A **`-universal`** variant of each (~96 MB, all 4 ABIs) exists for emulators.
 
 Android TVs have no app store for this, so you **sideload** it. Pick whichever method
 suits you — all end with the same APK install dialog on the TV.
@@ -122,7 +129,7 @@ suits you — all end with the same APK install dialog on the TV.
 
 **Method A — USB drive (no computer, no internet tricks)**
 
-1. Copy the APK you picked (`TGTV-v1.1-v7a.apk` or the v1.2 beta) to a USB stick
+1. Copy the APK you picked (stable v1.1 or the beta) to a USB stick
    (FAT32/exFAT both work)
 2. Plug the stick into the TV's USB port
 3. Open any **file manager** on the TV (most devices have one; if not, install
@@ -146,7 +153,7 @@ From a PC on the same Wi-Fi, in the folder containing the APK:
 
 ```powershell
 adb connect <tv-ip>:5555      # some devices use :5037, Fire TV shows the port in Settings
-adb install -r TGTV-v1.1-v7a.apk      # or the v1.2 beta APK
+adb install -r TGTV-v1.1-v7a.apk      # or the latest beta APK
 adb shell am start -n com.tgtv.videotv/.ui.MainActivity
 ```
 

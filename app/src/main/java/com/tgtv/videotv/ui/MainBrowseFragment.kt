@@ -45,7 +45,7 @@ class MainBrowseFragment : BrowseSupportFragment() {
                 ActionItem(ACTION_PAIR_VIA_PHONE, "◱", "Pair via phone", "Scan a QR with Telegram"),
                 ActionItem(ACTION_SIGN_OUT, "⎋", "Sign out", "Forget this session and start over"),
                 ActionItem(ACTION_TMDB, "★", "TMDB metadata", "Real titles, years and ratings on the cards"),
-                ActionItem(ACTION_SUBS, "ⓒ", "Subtitles", "On/off, languages and OpenSubtitles key"),
+                ActionItem(ACTION_SUBS, "ⓒ", "Subtitles", "On/off, languages and size"),
             ),
         )
     }
@@ -167,14 +167,12 @@ class MainBrowseFragment : BrowseSupportFragment() {
     }
 
     private fun showSubtitlesDialog(activity: Activity) {
-        val key = Credentials.openSubtitlesKey(activity)
         val sizeIdx = Credentials.subsTextSize(activity)
         val sizeLabels = listOf("Small", "Medium", "Large")
         val items = listOf(
             "Subtitles: ${if (Credentials.subsEnabled(activity)) "On" else "Off"}",
             "Subtitle size: ${sizeLabels.getOrElse(sizeIdx) { sizeLabels[0] }}",
             "Languages",
-            if (key == null) "OpenSubtitles key (free key)" else "OpenSubtitles key (set)",
             "Close",
         )
         activity.runOnUiThread {
@@ -193,10 +191,9 @@ class MainBrowseFragment : BrowseSupportFragment() {
                         )
 
                         2 -> subsLanguagesInput(activity)
-                        3 -> opensubsKeyInput(activity)
                         else -> return@setItems
                     }
-                    if (which != 4) showSubtitlesDialog(activity)
+                    if (which != 3) showSubtitlesDialog(activity)
                 }
                 .show()
         }
@@ -215,30 +212,6 @@ class MainBrowseFragment : BrowseSupportFragment() {
                 .setView(input)
                 .setPositiveButton("Save") { _, _ ->
                     Credentials.setSubsLanguages(activity, input.text.toString())
-                }
-                .setNegativeButton("Cancel", null)
-                .show()
-        }
-    }
-
-    private fun opensubsKeyInput(activity: Activity) {
-        val input = android.widget.EditText(activity).apply {
-            hint = "API key (hex or secret)"
-            setSingleLine()
-        }
-        activity.runOnUiThread {
-            AlertDialog.Builder(activity)
-                .setTitle("OpenSubtitles key")
-                .setMessage(
-                    "Create a free account at opensubtitles.com, then grab your API key " +
-                        "(Settings -> API keys) and paste it here.",
-                )
-                .setView(input)
-                .setPositiveButton("Save") { _, _ ->
-                    Credentials.setOpenSubtitlesKey(activity, input.text.toString())
-                }
-                .setNeutralButton("Remove") { _, _ ->
-                    Credentials.setOpenSubtitlesKey(activity, null)
                 }
                 .setNegativeButton("Cancel", null)
                 .show()

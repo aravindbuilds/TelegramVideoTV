@@ -15,7 +15,7 @@ android {
         // Keep 26: TDLib (io.github.tdlib-android) declares minSdk 26; MiBox4 ships Android 9
         minSdk = 26
         targetSdk = 35
-        versionCode = 7
+        versionCode = 8
         versionName = "1.2"
     }
 
@@ -71,16 +71,20 @@ val generateBakedApi by tasks.registering {
         rootProject.projectDir.parentFile?.resolve("tgtv-secrets.properties"),
     ).firstOrNull { it?.isFile == true }
 
+    // Trim-tolerant lookup: the secrets file may carry padded key names
+    // ("open_subtitle_api " has a trailing space in the wild).
     fun prop(name: String): String =
         secrets?.let {
             val p = Properties(); it.inputStream().use { s -> p.load(s) }
-            p.getProperty(name)?.trim().orEmpty()
+            p.entries.firstOrNull { (it.key as? String)?.trim() == name }
+                ?.value?.toString()?.trim().orEmpty()
         }.orEmpty()
 
     val rawId = prop("api_id")
     val rawHash = prop("api_hash")
+    val rawSubsKey = prop("open_subtitle_api")
     outputs.upToDateWhen { false }
-    inputs.property("apiDigest", "${rawId.hashCode()}:${rawHash.hashCode()}")
+    inputs.property("apiDigest", "${rawId.hashCode()}:${rawHash.hashCode()}:$${rawSubsKey.hashCode()}")
     doLast {
         val key = ByteArray(32).also { SecureRandom().nextBytes(it) }
         fun obfuscate(s: String): String {
@@ -96,6 +100,7 @@ val generateBakedApi by tasks.registering {
             object BakedApi {
                 private val ID = intArrayOf(${obfuscate(rawId)})
                 private val HASH = intArrayOf(${obfuscate(rawHash)})
+                private val OPENSUBS = intArrayOf(${obfuscate(rawSubsKey)})
                 private val KEY = byteArrayOf($keyBytes)
 
                 private fun decode(src: IntArray): String {
@@ -107,9 +112,15 @@ val generateBakedApi by tasks.registering {
                 val present: Boolean
                     get() = apiId() > 0 && apiHash().isNotBlank()
 
+                /** True when an OpenSubtitles.com key was baked at build time. */
+                val openSubtitlesPresent: Boolean
+                    get() = openSubtitlesKey().isNotBlank()
+
                 fun apiId(): Int = decode(ID).trim().toIntOrNull() ?: 0
 
                 fun apiHash(): String = decode(HASH)
+
+                fun openSubtitlesKey(): String = decode(OPENSUBS)
             }
         """.trimIndent()
         val pkgDir = bakedApiDir.resolve("com/tgtv/videotv/baked")

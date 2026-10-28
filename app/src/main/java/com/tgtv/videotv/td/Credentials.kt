@@ -112,8 +112,14 @@ object Credentials {
             .apply()
     }
 
-    /** Bring-your-own OpenSubtitles.com API key ("secret" or full key); null = web subs off. */
-    fun openSubtitlesKey(context: Context): String? = prefs(context).getString(KEY_OPENSUBS_KEY, null)
+    /**
+     * OpenSubtitles.com API key. Release builds have the maintainer's key
+     * compiled in (XOR-obfuscated), so web subtitles work out of the box; a
+     * key entered manually still wins as a per-device override.
+     */
+    fun openSubtitlesKey(context: Context): String? =
+        prefs(context).getString(KEY_OPENSUBS_KEY, null)?.takeIf { it.isNotBlank() }
+            ?: BakedApi.openSubtitlesKey().takeIf { it.isNotBlank() }
 
     fun setOpenSubtitlesKey(context: Context, key: String?) {
         prefs(context).edit()

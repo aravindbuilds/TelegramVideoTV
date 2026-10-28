@@ -136,6 +136,7 @@ class PlayerActivity : AppCompatActivity() {
         val items = listOf(
             "Subtitles: ${if (subsOn) "On" else "Off"}",
             "Subtitle size: ${subsSizeLabel(sizeIdx)}",
+            "Add subtitles (OpenSubtitles)",
             audioLabel(exo),
             "Playback speed: ${subsSpeedPreset()}",
             "Quality: ${qualityLabels[qualityIdx]}",
@@ -147,9 +148,10 @@ class PlayerActivity : AppCompatActivity() {
                 when (which) {
                     0 -> toggleSubtitles()
                     1 -> applySubtitleSize((sizeIdx + 1) % subsSizeLabels.size)
-                    2 -> cycleAudioTrack(exo)
-                    3 -> cycleSpeed(exo)
-                    4 -> applyQuality((qualityIdx + 1) % qualityLabels.size)
+                    2 -> fetchSubtitlesManually()
+                    3 -> cycleAudioTrack(exo)
+                    4 -> cycleSpeed(exo)
+                    5 -> applyQuality((qualityIdx + 1) % qualityLabels.size)
                     else -> return@setItems
                 }
                 // Refresh list to show new state for the next selection
@@ -499,7 +501,8 @@ class PlayerActivity : AppCompatActivity() {
     /**
      * When the file ships no subtitle tracks at all and web subtitles are
      * enabled, resolves the title through [TmdbClient] and side-loads an
-     * OpenSubtitles file (bring-your-own API key).
+     * OpenSubtitles file (key compiled into release builds). The settings
+     * panel offers the same lookup on demand for any file.
      */
     private fun maybeFetchExternalSubtitles(tracks: Tracks) {
         if (externalSubsTried) return
@@ -551,6 +554,63 @@ class PlayerActivity : AppCompatActivity() {
         exo.setMediaItem(item, position)
         exo.prepare()
         exo.playWhenReady = playWhenReady
+    }
+
+    /** True while a manual "Add subtitles" lookup is in flight. */
+    private var manualSubsFetching = false
+
+    /**
+     * Settings-panel "Add subtitles": same [SubtitlesClient] pipeline as the
+     * automatic fallback, but on demand - so it also works when the file
+     * already has embedded tracks the user wants to replace or supplement.
+     * Playback position survives the side-load ([attachSubtitle] re-opens
+     * the media item at the same position).
+     */
+    private fun fetchSubtitlesManually() {
+        val exo = player ?: return
+        if (fileName.isBlank()) {
+            Toast.makeText(this, "No file name to search for", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (!SubtitlesClient.hasKey(this)) {
+            Toast.makeText(this, "OpenSubtitles key unavailable", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (manualSubsFetching) return
+        manualSubsFetching = true
+        Toast.makeText(this, "Searching subtitles for \"${fileName}\"…", Toast.LENGTH_SHORT).show()
+        val context = applicationContext
+        lifecycleScope.launch(Dispatchers.IO) {
+            val fetched = SubtitlesClient.fetchFor(context, VideoItem(
+                messageId = 0L,
+                chatTitle = "",
+                title = fileName,
+                fileId = currentFileId,
+                fileSize = 0L,
+                durationSeconds = 0,
+                mimeType = "",
+                fileName = fileName,
+                thumbnailFileId = 0,
+            ))
+            withContext(Dispatchers.Main) {
+                manualSubsFetching = false
+                if (fetched == null) {
+                    TdLib.log("subs: manual lookup found nothing for '$fileName'")
+                    Toast.makeText(
+                        this@PlayerActivity,
+                        "No subtitles found",
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                } else {
+                    attachSubtitle(exo, fetched.file, fetched.language, fetched.label)
+                    Toast.makeText(
+                        this@PlayerActivity,
+                        "Subtitles added: ${Languages.nameOf(fetched.language)}",
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                }
+            }
+        }
     }
 
     override fun onStart() {

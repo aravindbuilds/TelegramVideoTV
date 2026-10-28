@@ -22,7 +22,8 @@ import java.net.URLEncoder
  * app cache and returns it for side-loading into ExoPlayer.
  *
  * Bring-your-own API key from opensubtitles.com (free account -> API keys);
- * without a key web subtitles stay disabled.
+ * release builds have the maintainer's key compiled in via [BakedApi], and a
+ * key stored in prefs (manual entry) overrides the baked one.
  */
 object SubtitlesClient {
 
