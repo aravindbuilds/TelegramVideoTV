@@ -21,3 +21,12 @@ hs_err_pid*
 Thumbs.db
 .DS_Store
 *.apk
+*.idsig
+
+# Build-time secrets (TDLib api_id/api_hash) - never commit
+secrets.properties
+tgtv-secrets.properties
+
+# Stray build artifacts
+classes.jar
+org/

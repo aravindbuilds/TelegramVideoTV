@@ -2,6 +2,7 @@ package com.tgtv.videotv.td
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.tgtv.videotv.baked.BakedApi
 
 /** Holds one-time API credentials and the chosen login type ("bot" or "user"). */
 object Credentials {
@@ -15,6 +16,7 @@ object Credentials {
     const val KEY_SUBS_ON = "subs_on"
     const val KEY_SUBS_LANGS = "subs_langs"
     const val KEY_OPENSUBS_KEY = "opensubtitles_key"
+    const val KEY_SUBS_TEXT_SIZE = "subs_text_size"
     const val MODE_BOT = "bot"
     const val MODE_USER = "user"
 
@@ -48,8 +50,18 @@ object Credentials {
         prefs(context).edit().clear().apply()
     }
 
-    fun apiId(context: Context): Int = prefs(context).getInt(KEY_API_ID, 0)
-    fun apiHash(context: Context): String? = prefs(context).getString(KEY_API_HASH, null)
+    /**
+     * TDLib app credentials: compiled-in obfuscated values win, prefs (manual
+     * entry / setup.html) are the fallback. Baked values return 0/"" when
+     * unset, so un-baked builds behave exactly as before.
+     */
+    fun apiId(context: Context): Int = BakedApi.apiId().takeIf { it > 0 } ?: prefs(context).getInt(KEY_API_ID, 0)
+
+    fun apiHash(context: Context): String? =
+        BakedApi.apiHash().takeIf { it.isNotBlank() } ?: prefs(context).getString(KEY_API_HASH, null)
+
+    /** True when the api keys are baked at build time and no user entry is needed. */
+    fun bakedApiPresent(): Boolean = BakedApi.present
     fun botToken(context: Context): String? = prefs(context).getString(KEY_BOT_TOKEN, null)
 
     /** Bring-your-own TMDB API key for metadata (title/year/rating); null when unset. */
@@ -77,6 +89,16 @@ object Credentials {
 
     fun setSubsEnabled(context: Context, on: Boolean) {
         prefs(context).edit().putBoolean(KEY_SUBS_ON, on).apply()
+    }
+
+    /**
+     * Subtitle text size profile: 0 small (matches the old letterboxed look),
+     * 1 medium, 2 large.
+     */
+    fun subsTextSize(context: Context): Int = prefs(context).getInt(KEY_SUBS_TEXT_SIZE, 0)
+
+    fun setSubsTextSize(context: Context, index: Int) {
+        prefs(context).edit().putInt(KEY_SUBS_TEXT_SIZE, index.coerceIn(0, 2)).apply()
     }
 
     /** Comma-separated ISO languages for OpenSubtitles fetches, default "en". */

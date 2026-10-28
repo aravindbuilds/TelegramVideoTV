@@ -216,7 +216,26 @@ object TdLib {
     val isStarted: Boolean get() = client != null
 
     fun start(context: Context) {
+        // Synchronized: App.onCreate, MainActivity, LoginActivity and
+        // QrLoginActivity can all call start() concurrently at boot; racing
+        // callers would otherwise each create a TDLib client and one leaks,
+        // mixing two auth streams into the same observables.
+        synchronized(this) {
+            if (client != null) return
+            startInternal(context)
+        }
+    }
+
+    private fun startInternal(context: Context) {
         if (client != null) return
+        // Reset all session-observables BEFORE creating the client: TDLib can
+        // report its first auth state within milliseconds of Client.create and
+        // a later reset would silently swallow it (login would hang forever).
+        _authState.value = null
+        _qrLink.value = null
+        chatCache.clear()
+        authJob?.cancel()
+        sentParameters = false
         try {
             Client.setLogMessageHandler(1) { _, _ -> }
             client = Client.create(
@@ -235,12 +254,6 @@ object TdLib {
         // Make sure the database dirs exist
         File(context.filesDir, "tdlib").mkdirs()
         filesRoot = File(context.filesDir, "tdlib_files").apply { mkdirs() }
-        // Bots receive chats they were added to without any extra init
-        _authState.value = null
-        _qrLink.value = null
-        chatCache.clear()
-        authJob?.cancel()
-        sentParameters = false
         authJob = CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             authState.collect { st ->
                 when (st) {

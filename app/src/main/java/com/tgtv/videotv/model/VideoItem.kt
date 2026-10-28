@@ -18,6 +18,16 @@ data class VideoItem(
     val mimeType: String,
     val fileName: String,
     val thumbnailFileId: Int,
+    /** Source chat; needed to identity-hide single videos across chats. */
+    val chatId: Long = 0,
+    /**
+     * Stable TDLib remote-file identifier. TDLib's numeric file ids die with
+     * the session - stored references become "file unspecified" on restart -
+     * so playback resolves this back to a live [TdApi.File] instead.
+     */
+    val remoteFileId: String = "",
+    /** "video" | "animation" | "videoNote" | "document", for remote re-resolve. */
+    val fileKind: String = "",
 ) : Serializable {
     fun prettySize(): String {
         val s = fileSize.toFloat()

@@ -44,6 +44,7 @@ object VideoMapper {
             v.video?.let { file ->
                 VideoItem(
                     messageId = message.id,
+                    chatId = message.chatId,
                     chatTitle = chatTitle,
                     title = titleOf(c.caption?.text, v.fileName, "Video"),
                     fileId = file.id,
@@ -52,6 +53,8 @@ object VideoMapper {
                     mimeType = v.mimeType,
                     fileName = fileNameOf(v.fileName, "video.mp4"),
                     thumbnailFileId = v.thumbnail?.file?.id ?: 0,
+                    remoteFileId = file.remote?.id ?: "",
+                    fileKind = "video",
                 )
             }
         }
@@ -59,6 +62,7 @@ object VideoMapper {
             vn.video?.let { file ->
                 VideoItem(
                     messageId = message.id,
+                    chatId = message.chatId,
                     chatTitle = chatTitle,
                     title = "Video note",
                     fileId = file.id,
@@ -67,6 +71,8 @@ object VideoMapper {
                     mimeType = "",
                     fileName = "video_note.mp4",
                     thumbnailFileId = vn.thumbnail?.file?.id ?: 0,
+                    remoteFileId = file.remote?.id ?: "",
+                    fileKind = "videoNote",
                 )
             }
         }
@@ -74,6 +80,7 @@ object VideoMapper {
             a.animation?.let { file ->
                 VideoItem(
                     messageId = message.id,
+                    chatId = message.chatId,
                     chatTitle = chatTitle,
                     title = titleOf(c.caption?.text, a.fileName, "Animation"),
                     fileId = file.id,
@@ -82,6 +89,8 @@ object VideoMapper {
                     mimeType = a.mimeType,
                     fileName = fileNameOf(a.fileName, "gif.mp4"),
                     thumbnailFileId = a.thumbnail?.file?.id ?: 0,
+                    remoteFileId = file.remote?.id ?: "",
+                    fileKind = "animation",
                 )
             }
         }
@@ -93,6 +102,7 @@ object VideoMapper {
             } else {
                 VideoItem(
                     messageId = message.id,
+                    chatId = message.chatId,
                     chatTitle = chatTitle,
                     title = titleOf(c.caption?.text, d.fileName, "Video"),
                     fileId = f.id,
@@ -101,6 +111,8 @@ object VideoMapper {
                     mimeType = d.mimeType,
                     fileName = fileNameOf(d.fileName, "video.mp4"),
                     thumbnailFileId = d.thumbnail?.file?.id ?: 0,
+                    remoteFileId = f.remote?.id ?: "",
+                    fileKind = "document",
                 )
             }
         }

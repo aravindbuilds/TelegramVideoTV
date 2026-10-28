@@ -49,10 +49,13 @@ class PhoneSetupActivity : AppCompatActivity() {
         statusView = findViewById(R.id.status)
 
         val steps = findViewById<LinearLayout>(R.id.steps)
+        val baked = Credentials.bakedApiPresent()
         listOf(
-            "①  Scan this code with your phone camera",
-            "②  Fill in API ID / API Hash (and bot token)",
-            "③  Tap Connect - the TV continues automatically",
+            "?  Keep this TV and your phone on the SAME Wi-Fi network",
+            "?  Scan this code with your phone camera",
+            if (baked) "?  Enter only the bot token on your phone" else
+                "?  Fill in API ID / API Hash (and bot token)",
+            "?  Tap Connect - the TV continues automatically",
         ).forEach { text ->
             val row = LayoutInflater.from(this)
                 .inflate(R.layout.item_phone_step, steps, false)
@@ -82,7 +85,11 @@ class PhoneSetupActivity : AppCompatActivity() {
             .joinToString("") { "%02x".format(it) }
         for (port in 8765..8775) {
             try {
-                val s = SetupServer(port, token, assets, ::onCredentials, ::statusJson)
+                val s = SetupServer(
+                    port, token, assets, ::onCredentials, ::statusJson,
+                    bakedId = Credentials.apiId(this),
+                    bakedHash = Credentials.apiHash(this) ?: "",
+                )
                 s.start(NanoHTTPD.SOCKET_READ_TIMEOUT, false)
                 server = s
                 val url = "http://$ip:$port/?t=$token"

@@ -20,6 +20,7 @@ import com.tgtv.videotv.svc.DownloadService
 import com.tgtv.videotv.td.Credentials
 import com.tgtv.videotv.td.TdError
 import com.tgtv.videotv.td.TdLib
+import com.tgtv.videotv.store.VideoLibrary
 import com.tgtv.videotv.model.Watchlist
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -97,11 +98,20 @@ class MainBrowseFragment : BrowseSupportFragment() {
         super.onDestroyView()
     }
 
-    /** A new video message arrived live -> rebuild the rows a moment later. */
+    /** A new video message arrived live -> store it and rebuild the rows soon. */
     private val videoUpdateListener: (org.drinkless.tdlib.TdApi.Object) -> Unit = { update ->
         if (update is org.drinkless.tdlib.TdApi.UpdateNewMessage &&
             VideoMapper.isVideoMessage(update.message.content)
         ) {
+            // Persist the reference so restarts skip the rescan entirely
+            val context = context
+            val chatTitle = TdLib.chatCache[update.message.chatId]?.title
+            val mapped = context?.let { c ->
+                VideoMapper.mapMessage(update.message, chatTitle ?: "Saved Messages")
+            }
+            if (context != null && mapped != null) {
+                VideoLibrary.upsert(context, mapped, update.message.date)
+            }
             rebuildJob?.cancel()
             rebuildJob = lifecycleScope.launch(Dispatchers.IO) {
                 delay(1500)
@@ -155,25 +165,37 @@ class MainBrowseFragment : BrowseSupportFragment() {
     }
 
     private fun showSubtitlesDialog(activity: Activity) {
-        val on = Credentials.subsEnabled(activity)
         val key = Credentials.openSubtitlesKey(activity)
-        val stateLine = buildString {
-            append(if (on) "On" else "Off")
-            append(" — ").append(Credentials.subsLanguages(activity))
-            append(", OpenSubtitles: ").append(
-                if (key == null) "no key (add a free key from opensubtitles.com)"
-                else key.take(4) + "…",
-            )
-        }
+        val sizeIdx = Credentials.subsTextSize(activity)
+        val sizeLabels = listOf("Small", "Medium", "Large")
+        val items = listOf(
+            "Subtitles: ${if (Credentials.subsEnabled(activity)) "On" else "Off"}",
+            "Subtitle size: ${sizeLabels.getOrElse(sizeIdx) { sizeLabels[0] }}",
+            "Languages",
+            if (key == null) "OpenSubtitles key (free key)" else "OpenSubtitles key (set)",
+            "Close",
+        )
         activity.runOnUiThread {
             AlertDialog.Builder(activity)
                 .setTitle("Subtitles")
-                .setMessage(stateLine)
-                .setPositiveButton(if (on) "Turn off" else "Turn on") { _, _ ->
-                    Credentials.setSubsEnabled(activity, !on)
+                .setItems(items.toTypedArray()) { _, which ->
+                    when (which) {
+                        0 -> Credentials.setSubsEnabled(
+                            activity,
+                            !Credentials.subsEnabled(activity),
+                        )
+
+                        1 -> Credentials.setSubsTextSize(
+                            activity,
+                            (Credentials.subsTextSize(activity) + 1) % sizeLabels.size,
+                        )
+
+                        2 -> subsLanguagesInput(activity)
+                        3 -> opensubsKeyInput(activity)
+                        else -> return@setItems
+                    }
+                    if (which != 4) showSubtitlesDialog(activity)
                 }
-                .setNegativeButton("Languages") { _, _ -> subsLanguagesInput(activity) }
-                .setNeutralButton("OpenSubtitles key") { _, _ -> opensubsKeyInput(activity) }
                 .show()
         }
     }
@@ -279,7 +301,12 @@ class MainBrowseFragment : BrowseSupportFragment() {
             AlertDialog.Builder(activity)
                 .setTitle(item.title)
                 .setItems(
-                    arrayOf("▶  Play (stream)", "⬇  Download to device", "Cancel"),
+                    arrayOf(
+                        "▶  Play (stream)",
+                        "⬇  Download to device",
+                        "✕  Remove from TGTV",
+                        "Cancel",
+                    ),
                 ) { _, which ->
                     when (which) {
                         0 -> startActivity(PlayerActivity.intent(requireContext(), item))
@@ -290,6 +317,20 @@ class MainBrowseFragment : BrowseSupportFragment() {
                                 "Downloading \"${item.title}\"...",
                                 Toast.LENGTH_SHORT,
                             ).show()
+                        }
+                        2 -> {
+                            forceRebuild = true
+                            VideoLibrary.hide(activity, item.chatId, item.messageId)
+                            Toast.makeText(
+                                activity,
+                                "Removed from TGTV (stays in Telegram)",
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                            rebuildJob?.cancel()
+                            rebuildJob = lifecycleScope.launch(Dispatchers.IO) {
+                                delay(300)
+                                buildRows(activity)
+                            }
                         }
                     }
                 }
@@ -302,7 +343,21 @@ class MainBrowseFragment : BrowseSupportFragment() {
         viewLifecycleOwner.lifecycleScope.launch {
             TdLib.authErrors.collect { message -> activity?.let { status(it, message) } }
         }
-        if (!loading && rowsAdapter.size() <= 1) {
+        // Rows must be rebuilt after a Remove / Watchlist change on the
+        // details screen; the DB makes the rebuild instant.
+        if (forceRebuild) {
+            forceRebuild = false
+            rebuildJob?.cancel()
+            rebuildJob = viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
+                if (loading) return@launch
+                loading = true
+                try {
+                    activity?.let { buildRows(it) }
+                } finally {
+                    loading = false
+                }
+            }
+        } else if (!loading && rowsAdapter.size() <= 1) {
             viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) { loadContent() }
         }
     }
@@ -380,9 +435,9 @@ class MainBrowseFragment : BrowseSupportFragment() {
                     if (isUser) {
                         "No videos found yet.\nPost or forward videos in a chat, then press Refresh."
                     } else {
-                        "Bots cannot read chat history.\n" +
-                            "Post a video in the group now - it will appear here live - " +
-                            "or use \"Pair via phone\" and sign in with QR for the full library."
+                        "Bots cannot read chat history, but what you have seen\n" +
+                            "is already saved here - forward or post a new video too.\n" +
+                            "For the full history use \"Pair via phone\" and sign in with QR."
                     },
                 )
             } else {
@@ -420,9 +475,31 @@ class MainBrowseFragment : BrowseSupportFragment() {
             // they are added - surface that instead of failing silently
             TdLib.log("no chats received from update stream")
         }
-        return TdLib.chatCache.values
+        val chats = TdLib.chatCache.values
             .filter { it.title.isNotBlank() }
-            .sortedByDescending { it.lastMessage?.date ?: 0 }
+            .toMutableList()
+        val known = chats.map { it.id }.toMutableSet()
+
+        // Chats stored in the local index reappear instantly on restart.
+        // This is what makes bot sessions survive cold starts: TDLib 1.8
+        // announces a group to the bot only when a NEW message lands there,
+        // so without this the library would stay empty until one does.
+        val ctx = context ?: return chats.sortedByDescending { it.lastMessage?.date ?: 0 }
+        val storedDates = mutableMapOf<Long, Int>()
+        VideoLibrary.chatIds(ctx).forEach { (id, title, newest) ->
+            if (!known.add(id)) return@forEach
+            storedDates[id] = newest
+            val live = runCatching {
+                TdLib.send(TdApi.GetChat(id)) as? TdApi.Chat
+            }.getOrNull()
+            chats.add(
+                live ?: TdApi.Chat().apply {
+                    this.id = id
+                    this.title = title
+                },
+            )
+        }
+        return chats.sortedByDescending { it.lastMessage?.date ?: storedDates[it.id] ?: 0 }
     }
 
     /**
@@ -432,56 +509,76 @@ class MainBrowseFragment : BrowseSupportFragment() {
      *   live-captured messages instead.
      */
     private suspend fun videosFor(chat: TdApi.Chat): List<VideoItem> {
-        val pairs = mutableListOf<Pair<TdApi.Message, VideoItem>>()
-        val context = context
-        val isUser = context != null &&
-            (TdLib.sessionIsUser || Credentials.loginMode(context) == Credentials.MODE_USER)
+        val context = context ?: return emptyList()
+        val scanned = mutableListOf<VideoItem>()
+        val isUser = TdLib.sessionIsUser ||
+            Credentials.loginMode(context) == Credentials.MODE_USER
 
         if (isUser) {
+            val found = mutableListOf<Pair<TdApi.Message, VideoItem>>()
             runCatching {
                 TdLib.send(TdApi.GetChatHistory(chat.id, 0, 0, LIMIT, false))
             }.onSuccess { hist ->
                 hist.messages?.forEach {
-                    VideoMapper.mapMessage(it, chat.title)?.let { v -> pairs.add(it to v) }
+                    VideoMapper.mapMessage(it, chat.title)?.let { v -> found.add(it to v) }
                 }
             }
 
-            if (pairs.size < LIMIT) {
+            if (found.size < LIMIT) {
                 for (filter in VideoMapper.filters) {
                     runCatching {
                         TdLib.send(
                             TdApi.SearchChatMessages(chat.id, null, "", null, 0L, 0, LIMIT, filter),
                         )
-                    }.onSuccess { found ->
-                        found.messages?.forEach {
-                            VideoMapper.mapMessage(it, chat.title)?.let { v -> pairs.add(it to v) }
+                    }.onSuccess { res ->
+                        res.messages?.forEach {
+                            VideoMapper.mapMessage(it, chat.title)?.let { v -> found.add(it to v) }
                         }
                     }
                 }
             }
+            found.forEach { (msg, item) ->
+                scanned.add(item)
+                VideoLibrary.upsert(context, item, msg.date)
+            }
         }
 
-        // Live-captured videos work for both modes; bots rely on them exclusively
+        // Live-captured messages from this session (both modes)
         TdLib.liveMessages[chat.id]?.forEach {
-            VideoMapper.mapMessage(it, chat.title)?.let { v -> pairs.add(it to v) }
+            VideoMapper.mapMessage(it, chat.title)?.let { v ->
+                scanned.add(v)
+                VideoLibrary.upsert(context, v, it.date)
+            }
         }
-        // Newest message first
-        return pairs.distinctBy { it.first.id }
-            .sortedByDescending { it.first.date }
-            .map { it.second }
-            .take(LIMIT)
+
+        // Then the stored index (main source for bots; fast-start for users)
+        val seen = scanned.map { it.chatId to it.messageId }.toMutableSet()
+        VideoLibrary.chatItems(context, chat.id).forEach { stored ->
+            val key = stored.chatId to stored.messageId
+            if (!seen.add(key)) return@forEach
+            scanned.add(stored)
+        }
+        // Newest first, hidden entries filtered out
+        return scanned
+            .distinctBy { it.chatId to it.messageId }
+            .filter { !VideoLibrary.isHidden(context, it.chatId, it.messageId) }
+            .sortedByDescending { it.messageId }
+            .take(LIMIT + 40)
     }
 
     private fun status(activity: Activity, message: String?) {
         activity.runOnUiThread { (activity as? MainActivity)?.setStatus(message) }
     }
 
-    private companion object {
+    companion object {
         const val LIMIT = 60
         const val ACTION_REFRESH = 1
         const val ACTION_PAIR_VIA_PHONE = 2
         const val ACTION_SIGN_OUT = 3
         const val ACTION_TMDB = 4
         const val ACTION_SUBS = 5
+
+        /** Set when a Remove happens elsewhere; guarantees a row rebuild. */
+        var forceRebuild = false
     }
 }

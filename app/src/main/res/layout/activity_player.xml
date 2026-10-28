@@ -22,4 +22,17 @@
         android:textColor="#FFFF6666"
         android:textSize="18sp"
         android:visibility="gone" />
+
+    <Button
+        android:id="@+id/playerSettingsBtn"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|end"
+        android:layout_marginBottom="28dp"
+        android:layout_marginEnd="28dp"
+        android:contentDescription="Playback settings"
+        android:focusable="true"
+        android:paddingHorizontal="22dp"
+        android:text="⚙ Settings"
+        android:visibility="gone" />
 </FrameLayout>

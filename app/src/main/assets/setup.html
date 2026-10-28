@@ -44,7 +44,8 @@
 <body>
 <div class="wrap">
   <h1>Link Telegram to your TV</h1>
-  <p class="sub">Enter your details here — they are sent to your TV over this network.</p>
+  <p class="sub">Enter your details here — they are sent to your TV over this network.<br>
+    Make sure this phone is on the SAME Wi-Fi network as the TV.</p>
 
   <form id="f" autocomplete="off" novalidate>
     <label>Sign-in type</label>
@@ -73,6 +74,8 @@
 </div>
 <script>
   var T = "__TOKEN__";
+  var BAKED_ID = __BAKED_ID__;
+  var BAKED_HASH = "__BAKED_HASH__";
   var f = document.getElementById("f"), go = document.getElementById("go");
   var box = document.getElementById("status"), msg = document.getElementById("msg");
   var timer = null;
@@ -84,6 +87,18 @@
     var m = mode();
     f.classList.toggle("user", m === "user");
     go.textContent = (m === "user") ? "Connect TV (scan QR next)" : "Connect TV";
+    var baked = __BAKED_ID__ > 0;
+    if (baked) {
+      document.getElementById("api_id").value = BAKED_ID;
+      document.getElementById("api_hash").value = BAKED_HASH;
+      document.getElementById("api_id").style.display = "none";
+      document.getElementById("api_hash").style.display = "none";
+      var nh = document.querySelector('a[href="https://my.telegram.org/apps"]');
+      if (nh) {
+        var hintDiv = nh.closest("div.hint");
+        if (hintDiv) hintDiv.style.display = "none";
+      }
+    }
   }
   shape();
 

@@ -33,6 +33,14 @@ object TmdbClient {
         val runtimeMinutes: Int? = null,
         val tagline: String? = null,
         val status: String? = null,
+        /** ISO release date ("2026-10-23"); details pass only. */
+        val releaseDate: String? = null,
+        /** Top-billed cast names; details pass only. */
+        val starring: List<String> = emptyList(),
+        /** Crew members credited as Director; details pass only. */
+        val directors: List<String> = emptyList(),
+        /** Crew members credited as Screenplay / Writer; details pass only. */
+        val writers: List<String> = emptyList(),
     )
 
     /** Sentinel for "TMDB has no such title" (ConcurrentHashMap rejects nulls). */
@@ -319,6 +327,7 @@ object TmdbClient {
                     mediaType = type,
                     backdropPath = r.optString("backdrop_path").takeIf { it.isNotBlank() },
                     posterPath = r.optString("poster_path").takeIf { it.isNotBlank() },
+                    releaseDate = date.takeIf { it.isNotBlank() },
                 )
             }
             return null
@@ -347,7 +356,7 @@ object TmdbClient {
     }    private fun fetchDetails(apiKey: String, info: Info): Info {
         val url = URL(
             "https://api.themoviedb.org/3/" + info.mediaType + "/" + info.tmdbId +
-                "?api_key=" + apiKey + "&language=en-US",
+                "?api_key=" + apiKey + "&language=en-US&append_to_response=credits",
         )
         val conn = url.openConnection() as HttpURLConnection
         try {
@@ -368,6 +377,29 @@ object TmdbClient {
                 "movie" -> d.optInt("runtime", 0).takeIf { it > 0 }
                 else -> d.optJSONArray("episode_run_time")?.optInt(0, 0)?.takeIf { it > 0 }
             }
+            val starring = mutableListOf<String>()
+            val directors = mutableListOf<String>()
+            val writers = mutableListOf<String>()
+            d.optJSONObject("credits")?.let { credits ->
+                credits.optJSONArray("cast")?.let { arr ->
+                    for (i in 0 until minOf(arr.length(), 6)) {
+                        arr.getJSONObject(i).optString("name").takeIf { it.isNotBlank() }
+                            ?.let { starring.add(it) }
+                    }
+                }
+                credits.optJSONArray("crew")?.let { arr ->
+                    for (i in 0 until arr.length()) {
+                        val job = arr.getJSONObject(i).optString("job")
+                        val name = arr.getJSONObject(i).optString("name")
+                        if (name.isBlank()) continue
+                        when (job) {
+                            "Director" -> if (name !in directors) directors.add(name)
+                            "Screenplay", "Screenplay, Story", "Writer", "Story" ->
+                                if (name !in writers) writers.add(name)
+                        }
+                    }
+                }
+            }
             return info.copy(
                 genres = genres,
                 runtimeMinutes = runtime,
@@ -380,6 +412,12 @@ object TmdbClient {
                 backdropPath = info.backdropPath ?: d.optString("backdrop_path"),
                 tagline = d.optString("tagline").takeIf { it.isNotBlank() },
                 status = d.optString("status").takeIf { it.isNotBlank() },
+                releaseDate = info.releaseDate
+                    ?: d.optString("release_date").takeIf { it.isNotBlank() }
+                    ?: d.optString("first_air_date").takeIf { it.isNotBlank() },
+                starring = starring,
+                directors = directors,
+                writers = writers,
             )
         } finally {
             conn.disconnect()

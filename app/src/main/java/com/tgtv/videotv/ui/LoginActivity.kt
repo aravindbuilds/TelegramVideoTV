@@ -54,7 +54,16 @@ class LoginActivity : AppCompatActivity() {
         botToken.setText(Credentials.botToken(this) ?: "")
 
         findViewById<View>(R.id.botCard).setOnClickListener { enterMode(Mode.BOT) }
-        findViewById<View>(R.id.qrCard).setOnClickListener { enterMode(Mode.QR) }
+        findViewById<View>(R.id.qrCard).setOnClickListener {
+            // With credentials built at build time there is no form worth
+            // showing - go straight to the Telegram "link device" QR.
+            if (Credentials.bakedApiPresent()) {
+                mode = Mode.QR
+                onSubmit()
+            } else {
+                enterMode(Mode.QR)
+            }
+        }
         findViewById<View>(R.id.backButton).setOnClickListener {
             mode = null
             choicePane.visibility = View.VISIBLE
@@ -84,25 +93,40 @@ class LoginActivity : AppCompatActivity() {
 
         val isBot = m == Mode.BOT
         botToken.visibility = if (isBot) View.VISIBLE else View.GONE
-        findViewById<View>(R.id.phoneButton).visibility = View.VISIBLE
+
         val signOutPending = Credentials.loginMode(this)?.let { saved ->
             saved != (if (isBot) Credentials.MODE_BOT else Credentials.MODE_USER)
         } == true
-        hintText.text = when {
-            isBot -> "Enter your API ID + API Hash (my.telegram.org/apps)\nand the bot token you got from @BotFather." +
-                if (signOutPending) {
-                    "\nPairing a different sign-in type will erase the old Telegram session first."
-                } else {
-                    ""
-                }
-            else -> "Enter your API ID + API Hash from my.telegram.org/apps.\n" +
-                "You will then scan a code with the Telegram app on your phone (Settings → Devices → Link Desktop Device)." +
-                if (signOutPending) {
-                    "\nPairing a different sign-in type will erase the old Telegram session first."
-                } else {
-                    ""
-                }
+
+        // Credentials compiled at build time are prefilled invisibly; the
+        // user never sees or types API keys, so keep that out of the copy.
+        val baked = Credentials.bakedApiPresent()
+        if (baked) {
+            apiId.visibility = View.GONE
+            apiHash.visibility = View.GONE
         }
+
+        val pending =
+            if (signOutPending) {
+                "\nSwitching sign-in type erases the old Telegram session first."
+            } else {
+                ""
+            }
+        hintText.text = when {
+            isBot && baked ->
+                "Enter the @BotFather bot token,\nor type it on your phone." + pending
+            isBot ->
+                "Enter your API ID + API Hash (my.telegram.org/apps)\n" +
+                "and the bot token you got from @BotFather." + pending
+            !baked ->
+                "Enter your API ID + API Hash (my.telegram.org/apps).\n" +
+                "Then scan the code with your phone's Telegram app\n" +
+                "(Settings > Devices > Link Desktop Device), on the same Wi-Fi." + pending
+            else -> "Scan the code with your phone's Telegram app\nYou are already signed in." + pending
+        }
+        findViewById<View>(R.id.phoneButton).visibility =
+            if (baked && !isBot) View.GONE else View.VISIBLE
+
         continueButton.text =
             if (isBot) "Save and connect" else "Save and show QR"
         continueButton.requestFocus()

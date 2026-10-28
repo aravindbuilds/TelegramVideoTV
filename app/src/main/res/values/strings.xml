@@ -11,4 +11,7 @@
     <string name="downloading">Downloading</string>
     <string name="download_complete">Download complete</string>
     <string name="download_hint">Long-press a video card to download it</string>
+    <string name="add_to_watchlist">Add to watchlist</string>
+    <string name="download_description">Download offline</string>
+    <string name="remove_description">Remove from TGTV</string>
 </resources>

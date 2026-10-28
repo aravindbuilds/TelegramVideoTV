@@ -12,6 +12,7 @@ import android.widget.Button
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.tgtv.videotv.R
@@ -19,6 +20,7 @@ import com.tgtv.videotv.model.Release
 import com.tgtv.videotv.model.VideoItem
 import com.tgtv.videotv.model.Watchlist
 import com.tgtv.videotv.svc.DownloadService
+import com.tgtv.videotv.store.VideoLibrary
 import com.tgtv.videotv.td.TdLib
 import com.tgtv.videotv.td.TmdbClient
 import kotlinx.coroutines.Dispatchers
@@ -28,13 +30,11 @@ import java.io.Serializable
 import java.net.HttpURLConnection
 import java.net.URL
 import kotlin.math.max
-import kotlin.math.roundToInt
 
 /**
- * Hero-style details screen (Zootopia reference layout): full TMDB backdrop,
- * poster on the left, ringed rating, Play / Watchlist / Download buttons,
- * overview and genre line, plus a "Versions" list to pick between alternate
- * files of the same title (1080p vs 720p, language cuts, ...).
+ * Hero-style details screen (TMDB Clean Layout): Full backdrop with dark atmospheric overlay,
+ * poster on the left, star user rating badge, Resume / Play Again / Bookmark / Remove actions,
+ * overview and crew/credits info.
  */
 class DetailsActivity : AppCompatActivity() {
 
@@ -45,20 +45,29 @@ class DetailsActivity : AppCompatActivity() {
     private val poster: ImageView by lazy { findViewById(R.id.poster) }
     private val txtTitle: TextView by lazy { findViewById(R.id.txtTitle) }
     private val txtTagline: TextView by lazy { findViewById(R.id.txtTagline) }
-    private val txtRating: TextView by lazy { findViewById(R.id.txtRating) }
-    private val txtStatus: TextView by lazy { findViewById(R.id.txtStatus) }
+    /** Composite user-rating block (star badge + value), reference layout. */
+    private val txtRating: LinearLayout by lazy { findViewById(R.id.txtRating) }
+    private val txtRatingValue: TextView by lazy { findViewById(R.id.txtRatingValue) }
+    private val txtMeta: TextView by lazy { findViewById(R.id.txtMeta) }
     private val txtOverview: TextView by lazy { findViewById(R.id.txtOverview) }
-    private val txtGenres: TextView by lazy { findViewById(R.id.txtGenres) }
+    private val txtOverviewLabel: TextView by lazy { findViewById(R.id.txtOverviewLabel) }
+    private val txtCredits: TextView by lazy { findViewById(R.id.txtCredits) }
     private val txtFile: TextView by lazy { findViewById(R.id.txtFile) }
     private val versionsList: LinearLayout by lazy { findViewById(R.id.versionsList) }
     private val txtVersionsLabel: TextView by lazy { findViewById(R.id.txtVersionsLabel) }
     private val btnPlay: Button by lazy { findViewById(R.id.btnPlay) }
-    private val btnDownload: Button by lazy { findViewById(R.id.btnDownload) }
-    private val btnWatchlist: Button by lazy { findViewById(R.id.btnWatchlist) }
+    private val btnReplay: Button by lazy { findViewById(R.id.btnReplay) }
+    private val btnWatchlist: android.widget.ImageButton by lazy { findViewById(R.id.btnWatchlist) }
+    private val btnRemove: android.widget.ImageButton by lazy { findViewById(R.id.btnRemove) }
+    private val btnDownload: android.widget.ImageButton by lazy { findViewById(R.id.btnDownload) }
+    private val txtQuality: TextView by lazy { findViewById(R.id.txtQuality) }
 
     /** Set once a TMDB backdrop resolves, so the TG thumb fallback stops racing. */
     private var posterUrl: String? = null
     private var backdropUrl: String? = null
+
+    /** Stored resume position in ms; 0 = never started / watch over from 0. */
+    private var resumeMs = 0L
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -68,15 +77,38 @@ class DetailsActivity : AppCompatActivity() {
         items = (intent.getSerializableExtra(EXTRA_ITEMS) as? ArrayList<VideoItem>)
             ?: listOf(video)
 
-        btnPlay.setOnClickListener { play(video) }
-        btnDownload.setOnClickListener { DownloadService.start(this, video) }
+        // Primary Resume / Play button action
+        btnPlay.setOnClickListener { play(video, resumeMs) }
+
+        // Play Again button action (restarts from beginning)
+        btnReplay.setOnClickListener { play(video, 0L) }
+
+        // Bookmark (Watchlist) toggle action
         renderWatchlistButton()
         btnWatchlist.setOnClickListener {
             val added = Watchlist.toggle(this, video)
             renderWatchlistState(added)
         }
-        // TV remote reliability: without an explicitly focused view the first
-        // centre presses go nowhere - focus Play right after layout settles
+
+        // Remove action = hides title locally without deleting from Telegram post
+        btnRemove.setOnClickListener {
+            VideoLibrary.hide(this, video.chatId, video.messageId)
+            Toast.makeText(
+                this,
+                "Removed from TGTV (stays in Telegram)",
+                Toast.LENGTH_SHORT,
+            ).show()
+            MainBrowseFragment.forceRebuild = true
+            finish()
+        }
+
+        btnDownload.setOnClickListener { DownloadService.start(this, video) }
+
+        // Hero quality badge (e.g. 1080p, 4K, WEB-DL)
+        txtQuality.text = VideoLibrary.qualityLabel(video)
+        txtQuality.visibility = View.VISIBLE
+
+        // Focus primary play button for TV D-Pad navigation reliability
         btnPlay.post { btnPlay.requestFocus() }
         renderFileLine()
         renderVersions()
@@ -89,55 +121,107 @@ class DetailsActivity : AppCompatActivity() {
                     ?: return@launch
                 renderTmdb(info)
             } catch (t: Throwable) {
-                Log.e("Details", "tmdb render failed", t)
+                Log.e("Details", "TMDB render failed", t)
             }
             renderTgBackdrop(video.thumbnailFileId)
         }
     }
 
-    private fun play(v: VideoItem) {
-        PlayerActivity.intent(this, v).let { startActivity(it) }
+    private fun play(v: VideoItem, startMs: Long = 0L) {
+        startActivity(PlayerActivity.intent(this, v, startMs))
     }
 
-    /** IMDb-style graded score: 80+ dark green, 70 light green,
-     *  60 yellow, 50 orange, below red. */
-    private fun gradeColor(pct: Int): Int = when {
-        pct >= 80 -> 0xFF1E8449.toInt()
-        pct >= 70 -> 0xFF8BC34A.toInt()
-        pct >= 60 -> 0xFFF5C518.toInt()
-        pct >= 50 -> 0xFFEF6C00.toInt()
-        else -> 0xFFE50914.toInt()
+    /** Re-queries shortly after returning from the player: its onStop save
+     *  lands AFTER our onResume (lifecycle order), so poll once more. */
+    private val resumeQuery = android.os.Handler(android.os.Looper.getMainLooper())
+
+    override fun onResume() {
+        super.onResume()
+        renderResumeState()
+        resumeQuery.postDelayed({ renderResumeState() }, 800)
+    }
+
+    override fun onPause() {
+        resumeQuery.removeCallbacksAndMessages(null)
+        super.onPause()
+    }
+
+    /**
+     * Dynamically handles Resume vs. Play state:
+     * - Positions > 20s show "▶ Resume" alongside the "↺ Play Again" button.
+     * - Positions near the end (97%+) are auto-cleared.
+     */
+    private fun renderResumeState() {
+        lifecycleScope.launch(Dispatchers.IO) {
+            val progress = VideoLibrary.progressOf(this@DetailsActivity, video.chatId, video.messageId)
+            var resume = 0L
+            if (progress != null) {
+                val (posMs, durMs) = progress
+                val effDur = if (durMs > 0) durMs else video.durationSeconds * 1000L
+                when {
+                    posMs <= 20_000L -> Unit
+                    effDur > 0L && posMs >= effDur * 97 / 100 -> VideoLibrary.clearProgress(
+                        this@DetailsActivity,
+                        video.chatId,
+                        video.messageId,
+                    )
+                    else -> resume = posMs
+                }
+            }
+            withContext(Dispatchers.Main) {
+                resumeMs = resume
+                btnPlay.text = if (resume > 0L) "▶ Resume" else "▶ Play"
+                btnReplay.visibility = if (resume > 0L) View.VISIBLE else View.GONE
+                btnPlay.requestFocus()
+            }
+            if (resume > 0L) {
+                TdLib.log("details: resume for msg=${video.messageId} at $resume")
+            }
+        }
     }
 
     // ------------------------------------------------------------ Content
 
     private fun renderTmdb(info: TmdbClient.Info) = runOnUiThread {
         try {
-            txtTitle.text =
-                info.title + (info.year?.let { " ($it)" } ?: "")
+            txtTitle.text = info.title
             if (info.tagline != null) {
-                txtTagline.text = info.tagline
+                txtTagline.text = "“${info.tagline}”"
                 txtTagline.visibility = View.VISIBLE
             }
+
+            // User rating block: star badge + "8.1 / 10" + USER RATING
             if (info.rating != null && info.rating > 0.0) {
-                val pct = (info.rating * 10).roundToInt()
-                val grade = gradeColor(pct)
-                txtRating.text = "$pct%"
-                txtRating.setTextColor(grade)
-                txtRating.background?.setTint(grade)
+                txtRatingValue.text = "%.1f".format(info.rating)
                 txtRating.visibility = View.VISIBLE
             }
-            txtStatus.text = listOfNotNull(
+
+            val meta = listOfNotNull(
+                prettyRelease(info.releaseDate),
+                info.genres.takeIf { it.isNotEmpty() }?.joinToString(", "),
                 info.runtimeMinutes?.let { m -> "${m / 60}h ${m % 60}m" }
                     ?: video.prettyRuntime().ifBlank { null },
-                info.status?.let { "Status - $it" },
-            ).joinToString("   ·   ")
+            ).joinToString("  ·  ")
+
+            if (meta.isNotBlank()) {
+                txtMeta.text = meta
+                txtMeta.visibility = View.VISIBLE
+            }
             if (info.overview.isNotBlank()) {
+                txtOverviewLabel.visibility = View.VISIBLE
                 txtOverview.text = info.overview
             }
-            if (info.genres.isNotEmpty()) {
-                txtGenres.text = "Genre: " + info.genres.joinToString(", ")
-                txtGenres.visibility = View.VISIBLE
+            val credits = listOfNotNull(
+                info.directors.takeIf { it.isNotEmpty() }
+                    ?.let { "Director: ${it.joinToString(", ")}" },
+                info.writers.takeIf { it.isNotEmpty() }
+                    ?.let { "Screenplay: ${it.joinToString(", ")}" },
+                info.starring.takeIf { it.isNotEmpty() }
+                    ?.let { "Starring: ${it.joinToString(", ")}" },
+            )
+            if (credits.isNotEmpty()) {
+                txtCredits.text = credits.joinToString("  ·  ")
+                txtCredits.visibility = View.VISIBLE
             }
             info.backdropPath?.let { path ->
                 backdropUrl = IMAGE_BASE_W1280 + path
@@ -156,6 +240,14 @@ class DetailsActivity : AppCompatActivity() {
         }
     }
 
+    private fun prettyRelease(iso: String?): String? = try {
+        iso?.takeIf { it.length >= 10 && it[4] == '-' && it[7] == '-' }?.let {
+            "${it.substring(5, 7)}/${it.substring(8, 10)}/${it.substring(0, 4)}"
+        }
+    } catch (_: Exception) {
+        null
+    }
+
     private fun renderFileLine() {
         val parts = listOfNotNull(
             video.prettySize().ifBlank { null },
@@ -170,13 +262,11 @@ class DetailsActivity : AppCompatActivity() {
         renderWatchlistState(Watchlist.contains(this, video))
 
     private fun renderWatchlistState(added: Boolean) {
-        btnWatchlist.text = if (added) "✓  In Watchlist" else "Add to Watchlist"
-        btnWatchlist.backgroundTintList = android.content.res.ColorStateList.valueOf(
-            if (added) 0xFFE50914.toInt() else 0x33FFFFFF,
-        )
+        btnWatchlist.setImageResource(if (added) R.drawable.ic_check else R.drawable.ic_bookmark)
+        btnWatchlist.contentDescription =
+            if (added) "In watchlist" else getString(R.string.add_to_watchlist)
     }
 
-    /** Every file in the row with the same parsed title is an alternate version. */
     private fun renderVersions() {
         try {
             val key = TmdbClient.parseTitle(video.fileName.ifBlank { video.title }).lowercase()
@@ -205,8 +295,9 @@ class DetailsActivity : AppCompatActivity() {
                     gravity = android.view.Gravity.START or android.view.Gravity.CENTER_VERTICAL
                     setPadding(dp(20), dp(12), dp(20), dp(12))
                     val selected = v.fileId == video.fileId && v.messageId == video.messageId
-                    backgroundTintList = android.content.res.ColorStateList.valueOf(
-                        if (selected) 0xFFE50914.toInt() else 0xFF262626.toInt(),
+                    // Prime pill when chosen; glowing dark pill otherwise
+                    setBackgroundResource(
+                        if (selected) R.drawable.bg_pill_red else R.drawable.bg_pill_list,
                     )
                     setTextColor(0xFFFFFFFF.toInt())
                     text = listOfNotNull(
@@ -226,7 +317,6 @@ class DetailsActivity : AppCompatActivity() {
 
     // ----------------------------------------------------------- Images
 
-    /** TG thumbnail fallback for both the poster and the backdrop if TMDB misses. */
     private suspend fun renderTgBackdrop(thumbnailFileId: Int) {
         if (thumbnailFileId == 0) return
         val path = runCatching {
@@ -248,7 +338,7 @@ class DetailsActivity : AppCompatActivity() {
             val stale = if (isPoster) posterUrl != url else backdropUrl != url
             if (view.tag != null) return@withContext
             if (!stale) {
-                if (isPoster) posterUrl = posterUrl // keep guard semantics
+                if (isPoster) posterUrl = posterUrl
                 view.setImageBitmap(bmp)
                 view.tag = url
             }
@@ -281,7 +371,7 @@ class DetailsActivity : AppCompatActivity() {
             path,
             BitmapFactory.Options().apply { inSampleSize = sample },
         ) ?: return null
-        // Center-crop-ish fill for the target aspect (backdrop ~16:9, poster 2:3-ish)
+
         return if (wide) {
             Bitmap.createScaledBitmap(bmp, 1280, 760, true)
         } else {
@@ -298,10 +388,9 @@ class DetailsActivity : AppCompatActivity() {
         private const val EXTRA_ITEMS = "items"
 
         fun intent(context: Context, video: VideoItem, siblings: List<VideoItem>): Intent {
-            val i = Intent(context, DetailsActivity::class.java)
+            return Intent(context, DetailsActivity::class.java)
                 .putExtra(EXTRA_VIDEO, video as Serializable)
                 .putExtra(EXTRA_ITEMS, ArrayList(siblings))
-            return i
         }
     }
 }

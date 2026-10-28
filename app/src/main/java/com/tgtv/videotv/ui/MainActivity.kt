@@ -20,7 +20,6 @@ class MainActivity : FragmentActivity() {
                 .replace(R.id.container, MainBrowseFragment())
                 .commit()
         }
-        Toast.makeText(this, getString(R.string.download_hint), Toast.LENGTH_LONG).show()
     }
 
     /** Fragment reports loading / connection / error or edit messages on its own row. */

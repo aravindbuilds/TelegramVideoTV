@@ -15,6 +15,8 @@ class SetupServer(
     private val assets: AssetManager,
     private val onCredentials: (mode: String, apiId: Int, apiHash: String, botToken: String) -> Unit,
     private val status: () -> JSONObject,
+    private val bakedId: Int = 0,
+    private val bakedHash: String = "",
 ) : NanoHTTPD(port) {
 
     private val hashRegex = Regex("""[0-9a-fA-F]{32}""")
@@ -41,6 +43,8 @@ class SetupServer(
             else -> {
                 val html = assets.open("setup.html").bufferedReader().use { it.readText() }
                     .replace("__TOKEN__", token)
+                    .replace("__BAKED_ID__", bakedId.toString())
+                    .replace("__BAKED_HASH__", bakedHash)
                 newFixedLengthResponse(Response.Status.OK, "text/html", html)
             }
         }
