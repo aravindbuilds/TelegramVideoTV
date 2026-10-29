@@ -22,6 +22,8 @@ No ads. No upload limits. Your Telegram account *is* the server.
 
 **Start here:** [Install on your TV](#1-install-tgtv-on-your-tv) → [Create a bot token](#2-get-a-bot-token) → [Log in](#3-log-in-on-the-tv). Two 5-minute steps.
 
+Also explore Mobile version : https://github.com/aravindbuilds/TGTV
+
 ## What's new in v1.2 (beta)
 
 - **User login is private by default** — QR (phone) sessions now show only
