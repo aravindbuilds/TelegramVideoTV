@@ -24,8 +24,25 @@ No ads. No upload limits. Your Telegram account *is* the server.
 
 Also explore Mobile version : https://github.com/aravindbuilds/TGTV
 
-## What's new in v1.2 (beta)
+## What's new in v1.2 (stable)
 
+- **Watch progress syncs across your devices** — TGTV quietly writes a position
+  bookmark into your Saved Messages while you watch. Open the same title later on
+  another device running TGTV and it offers to resume exactly where you left off.
+  Nothing leaves your own Telegram account.
+- **Cloud backup & restore** — *Settings → Backup / Restore* packs your library
+  layout (pinned chats, watch progress, preferences) into a private Saved Messages
+  file (`#TGTVBackup`); restore it on any TV or after a factory reset in one click.
+- **Search everything** — the search icon now searches **all of Telegram** (every
+  chat this session can see), not just the rows pinned to your library.
+- **Playback hardening** — stale file references self-heal (re-resolved from the
+  message instead of the expiring remote id), streaming retries transient network
+  failures instead of dying mid-movie, playback errors offer a working **retry**,
+  and the player falls back to any other available decoder when the preferred one
+  fails.
+- **In-app updates** — *Settings → Check for updates* downloads the newest release
+  from GitHub and launches the installer; a **Beta updates** toggle opts into
+  pre-releases.
 - **User login is private by default** — QR (phone) sessions now show only
   **Saved Messages** instead of every chat on the account. Your other chats,
   groups and personal media never reach the shared TV screen.
@@ -83,6 +100,9 @@ Also explore Mobile version : https://github.com/aravindbuilds/TGTV
 - YouTube-style time-based buffering: starts with ~2 s buffered, look-ahead grows to
   5 minutes of video
 - **Resume / Continue watching** — position saved locally, cleared after finishing
+- **In-app updates** — *Settings → Check for updates* downloads the newest release
+  from GitHub and launches the installer; a **Beta updates** toggle opts into
+  pre-releases (like the phone app)
 - Embedded subtitles plus **OpenSubtitles.com fallback** (key built into release
   builds) matched by TMDB ID and side-loaded without losing position
 - Player settings: subtitles/audio track/speed/quality cap plus on-demand
@@ -112,10 +132,9 @@ your files never leave the Telegram network on the way to your screen. No Bot AP
 ### 1. Install TGTV on your TV
 
 Grab the APK from [Releases](https://github.com/aravindbuilds/TelegramVideoTV/releases):
-**`TGTV-v1.1-v7a.apk`** (stable) for any Android TV (~24 MB; works on every device including
-arm64/x86 ones), or the **beta** (`TGTV-v1.2-v7a.apk` — Saved-Messages privacy,
-Add-chats picker, subtitles built in, on-demand "Add subtitles").
-A **`-universal`** variant of each (~96 MB, all 4 ABIs) exists for emulators.
+**`TGTV-v1.2-v7a.apk`** (latest) for any Android TV (~24 MB; works on every device
+including arm64/x86 ones). A **`-universal`** variant (~96 MB, all 4 ABIs) exists
+for emulators.
 
 Android TVs have no app store for this, so you **sideload** it. Pick whichever method
 suits you — all end with the same APK install dialog on the TV.
@@ -131,7 +150,7 @@ suits you — all end with the same APK install dialog on the TV.
 
 **Method A — USB drive (no computer, no internet tricks)**
 
-1. Copy the APK you picked (stable v1.1 or the beta) to a USB stick
+1. Copy the APK you picked to a USB stick
    (FAT32/exFAT both work)
 2. Plug the stick into the TV's USB port
 3. Open any **file manager** on the TV (most devices have one; if not, install
@@ -155,7 +174,7 @@ From a PC on the same Wi-Fi, in the folder containing the APK:
 
 ```powershell
 adb connect <tv-ip>:5555      # some devices use :5037, Fire TV shows the port in Settings
-adb install -r TGTV-v1.1-v7a.apk      # or the latest beta APK
+adb install -r TGTV-v1.2-v7a.apk      # latest release APK
 adb shell am start -n com.tgtv.videotv/.ui.MainActivity
 ```
 
@@ -252,7 +271,7 @@ again after every restart.
 
 | | |
 |---|---|
-| **App version** | v1.2 (beta) — latest stable: v1.1 |
+| **App version** | v1.2 (stable) — versionCode 9 |
 | **Android** | 8.0 (API 26) and newer |
 | **Tested on** | Xiaomi Mi Box 4 (Android 9, armeabi-v7a) |
 | **Variants** | **v7a** (armeabi-v7a only, ~24 MB — recommended for all devices) and **universal** (all 4 ABIs, ~96 MB — emulators / exotic arm64 devices) |
