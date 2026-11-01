@@ -2,6 +2,7 @@ package com.tgtv.videotv.td
 
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -51,6 +52,88 @@ object TmdbClient {
     /** Normalized query -> top result (misses cached through [MISS] to avoid refetching). */
     private val cache = ConcurrentHashMap<String, Info>()
 
+    // ------------------------------------------------------------ disk cache
+    // Every successful lookup is persisted as a tiny JSON file, so a restart
+    // (and its burst of card lookups) reads local files instead of hitting
+    // the network again - rows fill in instantly on cold start.
+
+    private var diskDir: java.io.File? = null
+
+    private fun ensureDisk(context: Context) {
+        if (diskDir == null) {
+            diskDir = java.io.File(context.filesDir, "tmdb").apply { mkdirs() }
+        }
+    }
+
+    private fun diskFileFor(key: String): java.io.File? {
+        val dir = diskDir ?: return null
+        val digest = java.security.MessageDigest.getInstance("MD5")
+            .digest(key.toByteArray())
+            .joinToString("") { "%02x".format(it) }
+        return java.io.File(dir, "$digest.json")
+    }
+
+    private fun saveDisk(key: String, info: Info) {
+        val f = diskFileFor(key) ?: return
+        runCatching {
+            val o = org.json.JSONObject()
+                .put("title", info.title)
+                .put("overview", info.overview)
+                .put("tmdbId", info.tmdbId)
+            info.year?.let { o.put("year", it) }
+            info.rating?.let { o.put("rating", it) }
+            info.mediaType?.let { o.put("mediaType", it) }
+            info.backdropPath?.let { o.put("backdropPath", it) }
+            info.posterPath?.let { o.put("posterPath", it) }
+            info.runtimeMinutes?.let { o.put("runtime", it) }
+            info.tagline?.let { o.put("tagline", it) }
+            info.status?.let { o.put("status", it) }
+            info.releaseDate?.let { o.put("releaseDate", it) }
+            if (info.genres.isNotEmpty()) o.put("genres", org.json.JSONArray(info.genres))
+            if (info.starring.isNotEmpty()) o.put("starring", org.json.JSONArray(info.starring))
+            if (info.directors.isNotEmpty()) o.put("directors", org.json.JSONArray(info.directors))
+            if (info.writers.isNotEmpty()) o.put("writers", org.json.JSONArray(info.writers))
+            f.writeText(o.toString())
+        }
+    }
+
+    private fun readDisk(key: String): Info? {
+        val f = diskFileFor(key) ?: return null
+        if (!f.exists() || f.length() == 0L) return null
+        return runCatching {
+            val o = org.json.JSONObject(f.readText())
+            fun list(name: String): List<String> =
+                o.optJSONArray(name)?.let { arr ->
+                    (0 until arr.length()).map { arr.optString(it) }
+                } ?: emptyList()
+            Info(
+                title = o.getString("title"),
+                year = o.optInt("year", -1).takeIf { it >= 0 },
+                rating = o.optDouble("rating", Double.NaN).takeIf { !it.isNaN() },
+                overview = o.optString("overview"),
+                tmdbId = o.optInt("tmdbId"),
+                mediaType = o.optString("mediaType").ifBlank { null },
+                backdropPath = o.optString("backdropPath").ifBlank { null },
+                posterPath = o.optString("posterPath").ifBlank { null },
+                genres = list("genres"),
+                runtimeMinutes = o.optInt("runtime", -1).takeIf { it >= 0 },
+                tagline = o.optString("tagline").ifBlank { null },
+                status = o.optString("status").ifBlank { null },
+                releaseDate = o.optString("releaseDate").ifBlank { null },
+                starring = list("starring"),
+                directors = list("directors"),
+                writers = list("writers"),
+            )
+        }.getOrNull()
+    }
+
+    /**
+     * Caps concurrent TMDB searches: a wall of cards firing lookups at once
+     * would burst past the API's rate limit (429s) on shared TV Wi-Fi; three
+     * at a time stays comfortably inside every limit.
+     */
+    private val lookupGate = kotlinx.coroutines.sync.Semaphore(3)
+
     /** On by default; supported by the built-in key or a user override in prefs. */
     fun enabled(context: Context): Boolean = !Credentials.tmdbDisabled(context)
 
@@ -82,6 +165,7 @@ object TmdbClient {
             ?.toIntOrNull()
 
     suspend fun lookup(context: Context, fileName: String): Info? {
+        ensureDisk(context)
         val apiKey = apiKey(context)
         val query = parseTitle(fileName)
         if (query.isBlank()) return null
@@ -92,17 +176,58 @@ object TmdbClient {
         val cacheKey = query.lowercase()
         cache[cacheKey]?.let { return it.takeUnless { hit -> hit === MISS } }
         val outcome = withContext(Dispatchers.IO) {
-            runCatching { fetch(apiKey, query) }
+            readDisk(cacheKey)?.let { disk ->
+                cache[cacheKey] = disk
+                TdLib.log("tmdb: '$query' (disk)")
+                Result.success<Info?>(disk)
+            } ?: runCatching { fetch(apiKey, query) }
         }
         return outcome.fold(
             onSuccess = { info ->
                 TdLib.log("tmdb: '$query' -> ${info?.title ?: "no match"}")
                 cache[cacheKey] = info ?: MISS
+                info?.let { saveDisk(cacheKey, it) }
                 info
             },
             onFailure = { e ->
                 // Transport error: transient -> do NOT cache a MISS over it
                 TdLib.log("tmdb: '$query' failed: ${e.message}")
+                null
+            },
+        )
+    }
+
+    /**
+     * Fast path for library cards: memory -> disk -> direct TMDB search with
+     * the retry ladder only. No Wikipedia/DuckDuckGo web resolution, so
+     * unmatched titles fail in seconds instead of minutes - the details
+     * screen keeps the full [lookup] pipeline for those.
+     */
+    suspend fun lookupQuick(context: Context, fileName: String): Info? {
+        ensureDisk(context)
+        val apiKey = apiKey(context)
+        val query = parseTitle(fileName)
+        if (query.isBlank() || JUNK_QUERY.matches(query.trim())) return null
+        val cacheKey = query.lowercase()
+        cache[cacheKey]?.let { return it.takeUnless { hit -> hit === MISS } }
+        val outcome = lookupGate.withPermit {
+            withContext(Dispatchers.IO) {
+                readDisk(cacheKey)?.let { disk ->
+                    cache[cacheKey] = disk
+                    TdLib.log("tmdb-quick: '$query' (disk)")
+                    Result.success<Info?>(disk)
+                } ?: runCatching { searchWithRetries(apiKey, query) }
+            }
+        }
+        return outcome.fold(
+            onSuccess = { info ->
+                TdLib.log("tmdb-quick: '$query' -> ${info?.title ?: "no match"}")
+                cache[cacheKey] = info ?: MISS
+                info?.let { saveDisk(cacheKey, it) }
+                info
+            },
+            onFailure = { e ->
+                TdLib.log("tmdb-quick: '$query' failed: ${e.message}")
                 null
             },
         )
@@ -350,7 +475,13 @@ object TmdbClient {
             runCatching { fetchDetails(apiKey(context), info) }.getOrNull()
         }
         if (enriched != null) {
-            cache[info.title.lowercase()] = enriched
+            ensureDisk(context)
+            // Reuse the key the base lookup was stored under, so the enriched
+            // details (genres/runtime/cast) survive a restart too
+            val key = cache.entries.firstOrNull { it.value === info }?.key
+                ?: info.title.lowercase()
+            cache[key] = enriched
+            saveDisk(key, enriched)
         }
         return enriched ?: info
     }    private fun fetchDetails(apiKey: String, info: Info): Info {

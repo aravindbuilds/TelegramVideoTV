@@ -7,43 +7,126 @@
     android:orientation="vertical"
     android:padding="32dp">
 
-    <TextView
-        android:id="@+id/qrTitle"
+    <!-- Pane 1: scan the QR with the phone's Telegram app -->
+    <LinearLayout
+        android:id="@+id/qrPane"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginBottom="24dp"
-        android:text="@string/qr_title"
-        android:textColor="@color/accent"
-        android:textSize="28sp"
-        android:textStyle="bold" />
-
-    <ImageView
-        android:id="@+id/qrCodeView"
-        android:layout_width="260dp"
-        android:layout_height="260dp"
-        android:layout_marginBottom="24dp"
-        android:background="#FFFFFFFF"
-        android:contentDescription="@string/qr_title"
-        android:padding="10dp"
-        android:scaleType="fitCenter" />
-
-    <TextView
-        android:id="@+id/qrInstructions"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginBottom="12dp"
         android:gravity="center"
-        android:lineSpacingExtra="4dp"
-        android:text="@string/qr_instructions"
-        android:textColor="#CCFFFFFF"
-        android:textSize="16sp" />
+        android:orientation="vertical">
 
-    <TextView
-        android:id="@+id/qrStatus"
-        android:layout_width="wrap_content"
+        <TextView
+            android:id="@+id/qrTitle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="24dp"
+            android:text="@string/qr_title"
+            android:textColor="@color/accent"
+            android:textSize="28sp"
+            android:textStyle="bold" />
+
+        <ImageView
+            android:id="@+id/qrCodeView"
+            android:layout_width="260dp"
+            android:layout_height="260dp"
+            android:layout_marginBottom="24dp"
+            android:background="#FFFFFFFF"
+            android:contentDescription="@string/qr_title"
+            android:padding="10dp"
+            android:scaleType="fitCenter" />
+
+        <TextView
+            android:id="@+id/qrInstructions"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp"
+            android:gravity="center"
+            android:lineSpacingExtra="4dp"
+            android:text="@string/qr_instructions"
+            android:textColor="#CCFFFFFF"
+            android:textSize="16sp" />
+
+        <TextView
+            android:id="@+id/qrStatus"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:gravity="center"
+            android:textColor="#FFCCCCCC"
+            android:textSize="14sp" />
+
+        <Button
+            android:id="@+id/phoneInstead"
+            style="@style/TgTvButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:minWidth="340dp"
+            android:text="Use phone number instead" />
+    </LinearLayout>
+
+    <!-- Pane 2: Telegram asked for a code / 2FA password / e-mail during
+         QR sign-in (ported from the phone app's login steps) -->
+    <LinearLayout
+        android:id="@+id/inputPane"
+        android:layout_width="460dp"
         android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
         android:gravity="center"
-        android:textColor="#FFCCCCCC"
-        android:textSize="14sp" />
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/inputTitle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="20dp"
+            android:gravity="center"
+            android:lineSpacingExtra="4dp"
+            android:textColor="#FFFFFFFF"
+            android:textSize="20sp"
+            android:textStyle="bold" />
+
+        <EditText
+            android:id="@+id/inputField"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:layout_marginBottom="16dp"
+            android:background="@drawable/input_background"
+            android:imeOptions="actionDone"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp" />
+
+        <TextView
+            android:id="@+id/inputStatus"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp"
+            android:gravity="center"
+            android:textColor="#FFCC4444"
+            android:textSize="14sp" />
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/inputBack"
+                style="@style/TgTvButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_margin="12dp"
+                android:minWidth="160dp"
+                android:text="Back" />
+
+            <Button
+                android:id="@+id/inputSubmit"
+                style="@style/TgTvButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_margin="12dp"
+                android:minWidth="220dp"
+                android:text="Continue" />
+        </LinearLayout>
+    </LinearLayout>
 </LinearLayout>

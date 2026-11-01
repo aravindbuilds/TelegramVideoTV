@@ -7,6 +7,7 @@ import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import com.tgtv.videotv.model.VideoItem
 import com.tgtv.videotv.model.Release
+import org.json.JSONObject
 
 /**
  * A tiny index of video references (never the video bytes - those stay on
@@ -185,6 +186,71 @@ object VideoLibrary {
         return out
     }
 
+    /** When the row was last updated locally (epoch ms), or 0 when never saved. */
+    private fun updatedAt(context: Context, chatId: Long, messageId: Long): Long =
+        if (chatId == 0L || messageId == 0L) 0L else helper(context).readableDatabase.rawQuery(
+            "SELECT updated_ms FROM $T_PROGRESS WHERE chat_id=? AND message_id=?",
+            arrayOf("$chatId", "$messageId"),
+        ).use { c -> if (c.moveToFirst()) c.getLong(0) else 0L }
+
+    /**
+     * Merges a progress entry that arrived from the other device (sync
+     * bookmark or cloud backup). Newest timestamp wins per entry, so applying
+     * a remote state can never clobber a newer local save; clears (pos = 0)
+     * only propagate when they are genuinely newer.
+     */
+    fun applyRemote(
+        context: Context,
+        chatId: Long,
+        messageId: Long,
+        positionMs: Long,
+        durationMs: Long,
+        remoteAtMs: Long,
+    ) {
+        if (chatId == 0L || messageId == 0L) return
+        if (remoteAtMs <= updatedAt(context, chatId, messageId)) return
+        if (positionMs <= 0L) {
+            clearProgress(context, chatId, messageId)
+        } else {
+            saveProgress(context, chatId, messageId, positionMs, durationMs)
+        }
+    }
+
+    /** Entire progress table as "chatId:messageId" -> (pos, dur, updatedMs). For cloud backup. */
+    fun progressAll(context: Context): Map<String, Triple<Long, Long, Long>> {
+        warmHiddenCache(context)
+        val out = mutableMapOf<String, Triple<Long, Long, Long>>()
+        helper(context).readableDatabase.rawQuery(
+            "SELECT chat_id, message_id, position_ms, duration_ms, updated_ms FROM $T_PROGRESS",
+            null,
+        ).use { c ->
+            while (c.moveToNext()) {
+                out[key(c.getLong(0), c.getLong(1))] =
+                    Triple(c.getLong(2), c.getLong(3), c.getLong(4))
+            }
+        }
+        return out
+    }
+
+    /** Restores a progress snapshot from a cloud backup (per-entry newest wins). */
+    fun restoreProgress(context: Context, progress: JSONObject) {
+        val keys = progress.keys()
+        while (keys.hasNext()) {
+            val k = keys.next()
+            val o = progress.optJSONObject(k) ?: continue
+            val parts = k.split(':')
+            if (parts.size != 2) continue
+            applyRemote(
+                context,
+                parts[0].toLongOrNull() ?: continue,
+                parts[1].toLongOrNull() ?: continue,
+                o.optLong("p"),
+                o.optLong("d"),
+                o.optLong("u"),
+            )
+        }
+    }
+
     /** Drops the resume row (position finished / played again from the start). */
     fun clearProgress(context: Context, chatId: Long, messageId: Long) {
         if (chatId == 0L || messageId == 0L) return
@@ -260,6 +326,26 @@ object VideoLibrary {
             helper(context).readableDatabase.rawQuery(
                 "SELECT * FROM $T_VIDEOS WHERE chat_id=? ORDER BY msg_date DESC",
                 arrayOf("$chatId"),
+            ),
+        )
+    }
+
+    /**
+     * Local full-text search over the index (title and file name, case
+     * blind). Newest message first; used by the Search action together with
+     * Telegram's global account search.
+     */
+    fun search(context: Context, query: String): List<VideoItem> {
+        val q = query.trim()
+        if (q.isEmpty()) return emptyList()
+        warmHiddenCache(context)
+        return visible(
+            context,
+            helper(context).readableDatabase.rawQuery(
+                "SELECT * FROM $T_VIDEOS " +
+                    "WHERE title LIKE ? OR file_name LIKE ? " +
+                    "ORDER BY msg_date DESC LIMIT 60",
+                arrayOf("%$q%", "%$q%"),
             ),
         )
     }

@@ -20,6 +20,7 @@ import androidx.media3.common.text.Cue
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSource
 import androidx.media3.exoplayer.DefaultLoadControl
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.PlayerView
@@ -28,7 +29,9 @@ import com.tgtv.videotv.model.VideoItem
 import com.tgtv.videotv.model.VideoMapper
 import com.tgtv.videotv.sub.Languages
 import com.tgtv.videotv.sub.SubtitlesClient
+import com.tgtv.videotv.td.CloudBackup
 import com.tgtv.videotv.td.Credentials
+import com.tgtv.videotv.td.ProgressSync
 import com.tgtv.videotv.td.TdLib
 import com.tgtv.videotv.td.TmdbClient
 import com.tgtv.videotv.store.VideoLibrary
@@ -69,6 +72,10 @@ class PlayerActivity : AppCompatActivity() {
 
     private var player: ExoPlayer? = null
     private var currentFileId = 0
+    private var currentSize = 0L
+    private var rawFileId = 0
+    private var remoteRef = ""
+    private var kind = ""
     private var fileName = ""
     private var externalSubsTried = false
     /** Which library row is playing - the resume position keys off it. */
@@ -76,6 +83,10 @@ class PlayerActivity : AppCompatActivity() {
     private var msgId = 0L
     private var startPosMs = 0L
     private var progressSaved = false
+    /** Largest duration ever seen this session: a TDLib stream reports only
+     *  the downloaded prefix, so the live value can be far short of the real
+     *  runtime - and using it would corrupt the resume bookmark. */
+    private var bestDurationMs = 0L
     private var qualityIdx = 0
     private val qualityLabels = arrayOf("Auto", "1080p", "720p", "480p")
     private val qualityCaps = arrayOf(
@@ -307,58 +318,16 @@ class PlayerActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_player)
 
-        var fileId = intent.getIntExtra(EXTRA_FILE_ID, 0)
-        var size = intent.getLongExtra(EXTRA_SIZE, 0L)
         fileName = intent.getStringExtra(EXTRA_NAME) ?: ""
-        val remoteId = intent.getStringExtra(EXTRA_REMOTE) ?: ""
-        val kind = intent.getStringExtra(EXTRA_KIND) ?: ""
-        val chatIdExtra = intent.getLongExtra(EXTRA_CHAT_ID, 0L)
-        val msgIdExtra = intent.getLongExtra(EXTRA_MSG_ID, 0L)
+        remoteRef = intent.getStringExtra(EXTRA_REMOTE) ?: ""
+        kind = intent.getStringExtra(EXTRA_KIND) ?: ""
+        chatId = intent.getLongExtra(EXTRA_CHAT_ID, 0L)
+        msgId = intent.getLongExtra(EXTRA_MSG_ID, 0L)
+        rawFileId = intent.getIntExtra(EXTRA_FILE_ID, 0)
         startPosMs = intent.getLongExtra(EXTRA_START_MS, 0L).coerceAtLeast(0L)
-        chatId = chatIdExtra
-        msgId = msgIdExtra
 
         lifecycleScope.launch {
-            // DB-restored rows carry a session-stale file id ("file
-            // unspecified"). The stable remote id re-resolves to a live file
-            // in this session; strictly better when it works, else fall back.
-            if (remoteId.isNotBlank()) {
-                val fresh = withContext(Dispatchers.IO) {
-                    runCatching {
-                        TdLib.send(
-                            TdApi.GetRemoteFile(
-                                remoteId,
-                                fileTypeFor(kind, fileName),
-                            ),
-                        ) as? TdApi.File
-                    }.getOrNull()
-                }
-                if (fresh != null && fresh.id > 0) {
-                    fileId = fresh.id
-                    if (fresh.size > 0) size = fresh.size
-                } else {
-                    TdLib.log("player: remote re-resolve failed, using stored fileId=$fileId")
-                }
-            }
-
-            // Last resort for rows with no remote id: bots cannot scan
-            // history, but fetching one known message by id usually still works.
-            if (chatId != 0L && msgId != 0L) {
-                val msg = withContext(Dispatchers.IO) {
-                    runCatching {
-                        TdLib.send(TdApi.GetMessage(chatId, msgId)) as? TdApi.Message
-                    }.getOrNull()
-                }
-                if (msg != null) {
-                    VideoMapper.mapMessage(msg, "")?.let { v ->
-                        fileId = v.fileId
-                        if (v.fileSize > 0) size = v.fileSize
-                    }
-                } else {
-                    TdLib.log("player: GetMessage fallback failed for $msgId")
-                }
-            }
-
+            val (fileId, size) = withContext(Dispatchers.IO) { resolveLiveFile(currentSize) }
             if (fileId <= 0) {
                 Toast.makeText(this@PlayerActivity, "Invalid video reference", Toast.LENGTH_SHORT)
                     .show()
@@ -366,8 +335,58 @@ class PlayerActivity : AppCompatActivity() {
                 return@launch
             }
             currentFileId = fileId
+            currentSize = size
             startPlayback(fileId, size)
         }
+    }
+
+    /**
+     * Re-resolves a live file reference for this session.
+     *
+     * GetMessage first, always: only message-derived files get the TDLib
+     * auto-repair treatment, so their ids stay fresh across sessions. Files
+     * resolved through GetRemoteFile carry remote references that expire and
+     * then fail with "File not found" - that path is the fallback only, used
+     * for rows without chat coordinates.
+     */
+    private suspend fun resolveLiveFile(sizeFallback: Long): Pair<Int, Long> {
+        var fileId = rawFileId
+        var size = sizeFallback
+        if (chatId != 0L && msgId != 0L) {
+            val msg = withContext(Dispatchers.IO) {
+                runCatching {
+                    TdLib.send(TdApi.GetMessage(chatId, msgId)) as? TdApi.Message
+                }.getOrNull()
+            }
+            if (msg != null) {
+                VideoMapper.mapMessage(msg, "")?.let { v ->
+                    if (v.fileId > 0) {
+                        if (v.fileSize > 0) size = v.fileSize
+                        return v.fileId to size
+                    }
+                }
+            }
+            TdLib.log("player: GetMessage resolve failed, falling back to remote id")
+        }
+        if (remoteRef.isNotBlank()) {
+            val fresh = withContext(Dispatchers.IO) {
+                runCatching {
+                    TdLib.send(
+                        TdApi.GetRemoteFile(
+                            remoteRef,
+                            fileTypeFor(kind, fileName),
+                        ),
+                    ) as? TdApi.File
+                }.getOrNull()
+            }
+            if (fresh != null && fresh.id > 0) {
+                fileId = fresh.id
+                if (fresh.size > 0) size = fresh.size
+            } else {
+                TdLib.log("player: remote re-resolve failed, using stored fileId=$fileId")
+            }
+        }
+        return fileId to size
     }
 
     /** Maps a stored kind (or mime sniff) to a TDLib FileType for re-resolve. */
@@ -388,6 +407,11 @@ class PlayerActivity : AppCompatActivity() {
             DataSource.Factory { TdVideoStreamDataSource(fileId, size) }
 
         val errorView = findViewById<TextView>(R.id.playerError)
+        // A playback error is recoverable: selecting the message re-resolves
+        // the (possibly stale) file reference and rebuilds the player.
+        errorView.isFocusable = true
+        errorView.isClickable = true
+        errorView.setOnClickListener { retryPlayback() }
         val playerView = findViewById<PlayerView>(R.id.playerView)
         // Playback settings reachable from the visible controls too - the
         // gear button rides along with the controller's show/hide state.
@@ -445,7 +469,12 @@ class PlayerActivity : AppCompatActivity() {
             .setPrioritizeTimeOverSizeThresholds(true)
             .build()
 
-        val exo = ExoPlayer.Builder(this)
+        // Try every available decoder when the preferred one fails to
+        // init or dies mid-stream - without this, one flaky codec (e.g.
+        // the emulator's goldfish HEVC decoder) kills the whole playback.
+        val renderersFactory = DefaultRenderersFactory(this).setEnableDecoderFallback(true)
+
+        val exo = ExoPlayer.Builder(this, renderersFactory)
             .setMediaSourceFactory(mediaSourceFactory)
             .setLoadControl(loadControl)
             .build()
@@ -470,13 +499,25 @@ class PlayerActivity : AppCompatActivity() {
                 addListener(object : Player.Listener {
                     override fun onPlayerError(error: PlaybackException) {
                         errorView.visibility = View.VISIBLE
-                        errorView.text = "Playback error: ${error.errorCodeName}. " +
-                            "Check the network and reopen it."
+                        errorView.text = playbackErrorText(error)
+                        errorView.requestFocus()
+                    }
+
+                    /** Track the largest duration ever seen: a TDLib stream
+                     *  reports only the downloaded prefix, so the value at exit
+                     *  can be far short of the real runtime. */
+                    override fun onEvents(player: Player, events: Player.Events) {
+                        val d = player.duration
+                        if (d != C.TIME_UNSET && d > bestDurationMs) bestDurationMs = d
                     }
 
                     // Finished: drop the resume bookmark so reopening the
                     // title starts fresh instead of "Continue" at the end
                     override fun onPlaybackStateChanged(state: Int) {
+                        if (state == Player.STATE_READY) {
+                            // A retry recovered - clear the old error message
+                            findViewById<TextView>(R.id.playerError).visibility = View.GONE
+                        }
                         if (state == Player.STATE_ENDED) {
                             progressSaved = true
                             syncProgress(requestedClear = true)
@@ -613,6 +654,65 @@ class PlayerActivity : AppCompatActivity() {
         }
     }
 
+    /** Human-readable playback error with the premium-limit hint when relevant. */
+    private fun playbackErrorText(error: PlaybackException): String {
+        val causeMsg = generateSequence(error.cause) { t -> t.cause }
+            .filterNotNull()
+            .map { t -> t.message.orEmpty() }
+            .firstOrNull { m -> m.isNotBlank() } ?: ""
+        val hint = when {
+            causeMsg.contains("premium", ignoreCase = true) ||
+                causeMsg.contains("too big", ignoreCase = true) ||
+                causeMsg.contains("FILE_TOO_BIG", ignoreCase = true) ->
+                "Telegram only delivers the file parts needed for streaming beyond 2 GB to Premium accounts."
+            causeMsg.contains("Decoder failed", ignoreCase = true) ||
+                causeMsg.contains("codec", ignoreCase = true) ||
+                error.errorCodeName.contains("DECODING", ignoreCase = true) ->
+                "Decoder failed for this file - this device can't decode its video format. " +
+                    "It may play on other devices."
+            else -> "Press OK on this message to retry."
+        }
+        return buildString {
+            append("Playback error: ")
+            append(error.errorCodeName)
+            if (causeMsg.isNotBlank()) {
+                append('\n')
+                append(causeMsg)
+            }
+            append('\n')
+            append(hint)
+        }
+    }
+
+    /**
+     * Full retry after a playback error: re-resolve the file reference (the
+     * old code just re-prepared with the same dead id, so "File not found"
+     * never recovered) and rebuild the player at the last position.
+     */
+    private fun retryPlayback() {
+        val exo = player ?: return
+        val position = if (exo.playbackState == Player.STATE_IDLE) 0L else exo.currentPosition
+        val errorView = findViewById<TextView>(R.id.playerError)
+        errorView.text = "Reconnecting..."
+        lifecycleScope.launch {
+            val (fileId, size) = withContext(Dispatchers.IO) { resolveLiveFile(currentSize) }
+            player?.release()
+            player = null
+            if (fileId != currentFileId) {
+                TdLib.log("player: retry resolved fresh fileId=$fileId (was $currentFileId)")
+                currentFileId = fileId
+            }
+            if (size > 0) currentSize = size
+            setupOrRestart(fileId, position)
+        }
+    }
+
+    /** Retry path entry: rebuilds the player at [position] with the fresh file. */
+    private fun setupOrRestart(fileId: Int, position: Long) {
+        startPosMs = position
+        startPlayback(fileId, currentSize)
+    }
+
     override fun onStart() {
         super.onStart()
         // Re-arm saving: a play -> background -> resume -> exit cycle should
@@ -645,7 +745,10 @@ class PlayerActivity : AppCompatActivity() {
     private fun syncProgress(requestedClear: Boolean = false) {
         val exo = player ?: return
         val pos = exo.currentPosition.coerceAtLeast(0L)
-        val dur = exo.duration.takeIf { it != C.TIME_UNSET && it > 0L } ?: 0L
+        val dur = maxOf(
+            bestDurationMs,
+            exo.duration.takeIf { it != C.TIME_UNSET && it > 0L } ?: 0L,
+        )
         val forceClear = requestedClear || (dur > 0L && pos >= dur * 97 / 100)
         val ctx = applicationContext
         when {
@@ -655,6 +758,12 @@ class PlayerActivity : AppCompatActivity() {
             }
             else -> VideoLibrary.saveProgress(ctx, chatId, msgId, pos, dur)
         }
+        // Cross-device sync: bookmark reply in Saved Messages (tombstone on
+        // clear), picked up by the phone app's next scan. Fire-and-forget.
+        val syncedPos = if (forceClear || (pos < 10_000L && startPosMs == 0L)) 0L else pos
+        ProgressSync.sync(chatId, msgId, syncedPos, dur)
+        // Fold the new position into the cloud backup snapshot (throttled)
+        if (chatId != 0L && msgId != 0L) CloudBackup.request(ctx)
         TdLib.log("progress: chat=$chatId msg=$msgId pos=$pos dur=$dur clear=$forceClear")
     }
 

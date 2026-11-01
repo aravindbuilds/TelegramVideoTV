@@ -109,6 +109,38 @@ class TdVideoStreamDataSource(
 
     override fun toString(): String = "TdStream(fileId=$fileId)"
 
+    /**
+     * Synchronously downloads the range, retrying transient failures. Hard
+     * refusals (Telegram's 2 GB non-premium download limit, invalid file)
+     * are rethrown immediately - retrying them would just buffer forever.
+     */
+    private fun fetchRange(alignedPos: Long, limit: Long): TdApi.File {
+        var lastError: TdError? = null
+        for (attempt in 0 until 3) {
+            try {
+                return runBlocking {
+                    TdLib.downloadRange(fileId, alignedPos, limit, DOWNLOAD_PRIORITY)
+                }
+            } catch (e: TdError) {
+                lastError = e
+                val msg = e.message
+                if (msg != null && (msg.contains("premium", ignoreCase = true) ||
+                        msg.contains("too big", ignoreCase = true) ||
+                        msg.contains("FILE_TOO_BIG", ignoreCase = true) ||
+                        msg.contains("FILE_ID_INVALID", ignoreCase = true))
+                ) {
+                    throw e
+                }
+                try {
+                    Thread.sleep(150L * (attempt + 1))
+                } catch (_: InterruptedException) {
+                    throw IOException("Playback loader interrupted")
+                }
+            }
+        }
+        throw lastError ?: IOException("TDLib range download failed at $alignedPos")
+    }
+
     @Throws(IOException::class)
     private fun fillScratch() {
         val alignedPos = readPosition - readPosition % ALIGN_1K
@@ -127,7 +159,7 @@ class TdVideoStreamDataSource(
 
         // Block until the range exists physically in TDLib's partial file
         val fi: TdApi.File = try {
-            runBlocking { TdLib.downloadRange(fileId, alignedPos, limit, DOWNLOAD_PRIORITY) }
+            fetchRange(alignedPos, limit)
         } catch (e: TdError) {
             throw IOException("TDLib could not download $limit bytes at $alignedPos: ${e.message}", e)
         }
@@ -173,7 +205,11 @@ class TdVideoStreamDataSource(
         } catch (e: IOException) {
             // The partial file may have been moved/rewritten by TDLib - reopen once
             reopenHandle(path)
-            runBlocking { TdLib.downloadRange(fileId, alignedPos, limit, DOWNLOAD_PRIORITY) }
+            try {
+                fetchRange(alignedPos, limit)
+            } catch (e: TdError) {
+                throw IOException("TDLib could not re-download $limit bytes at $alignedPos: ${e.message}", e)
+            }
             val fresh = File(path)
             if (!fresh.exists() || fresh.length() < alignedPos) {
                 throw IOException("TDLib local file unreadable at $alignedPos", e)

@@ -18,6 +18,7 @@ object Credentials {
     const val KEY_OPENSUBS_KEY = "opensubtitles_key"
     const val KEY_SUBS_TEXT_SIZE = "subs_text_size"
     const val KEY_LIBRARY_CHATS = "library_chats"
+    const val KEY_BETA_UPDATES = "beta_updates"
     const val MODE_BOT = "bot"
     const val MODE_USER = "user"
 
@@ -79,6 +80,7 @@ object Credentials {
 
     fun setTmdbDisabled(context: Context, disabled: Boolean) {
         prefs(context).edit().putBoolean(KEY_TMDB_DISABLED, disabled).apply()
+        markEdited(context, "tmdb_edited")
     }
 
     // ------------------------------------------------------------------
@@ -90,6 +92,7 @@ object Credentials {
 
     fun setSubsEnabled(context: Context, on: Boolean) {
         prefs(context).edit().putBoolean(KEY_SUBS_ON, on).apply()
+        markEdited(context, "subs_edited")
     }
 
     /**
@@ -100,6 +103,7 @@ object Credentials {
 
     fun setSubsTextSize(context: Context, index: Int) {
         prefs(context).edit().putInt(KEY_SUBS_TEXT_SIZE, index.coerceIn(0, 2)).apply()
+        markEdited(context, "subs_edited")
     }
 
     /** Comma-separated ISO languages for OpenSubtitles fetches, default "en". */
@@ -110,6 +114,7 @@ object Credentials {
         prefs(context).edit()
             .putString(KEY_SUBS_LANGS, langs.trim().lowercase().takeIf { it.isNotBlank() } ?: "en")
             .apply()
+        markEdited(context, "subs_edited")
     }
 
     /**
@@ -142,5 +147,36 @@ object Credentials {
 
     fun setLibraryChats(context: Context, ids: Set<String>) {
         prefs(context).edit().putStringSet(KEY_LIBRARY_CHATS, ids).apply()
+    }
+
+    // ------------------------------------------------------------------
+    // In-app updates
+    // ------------------------------------------------------------------
+
+    /**
+     * Opt-in to beta (pre-release) versions in the in-app updater. Off by
+     * default: only stable releases are offered.
+     */
+    fun betaUpdates(context: Context): Boolean = prefs(context).getBoolean(KEY_BETA_UPDATES, false)
+
+    fun setBetaUpdates(context: Context, on: Boolean) {
+        prefs(context).edit().putBoolean(KEY_BETA_UPDATES, on).apply()
+    }
+
+    // ------------------------------------------------------------------
+    // Cloud backup merge guards
+    // ------------------------------------------------------------------
+
+    /**
+     * True once the user changed a preference on THIS device. A cloud
+     * restore only overrides prefs that were never touched locally, so the
+     * two devices can each customize without fighting.
+     */
+    fun subsEdited(context: Context): Boolean = prefs(context).getBoolean("subs_edited", false)
+
+    fun tmdbEdited(context: Context): Boolean = prefs(context).getBoolean("tmdb_edited", false)
+
+    private fun markEdited(context: Context, flag: String) {
+        prefs(context).edit().putBoolean(flag, true).apply()
     }
 }

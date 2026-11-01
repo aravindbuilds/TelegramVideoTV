@@ -101,10 +101,12 @@ class VideoCardPresenter : Presenter() {
 
         // TMDB enrichment runs for EVERY card (before the thumbnail early
         // return) - cards without a Telegram thumbnail otherwise never get
-        // their poster. Poster first; backdrop as fallback.
+        // their poster. Poster first; backdrop as fallback. Quick lookup:
+        // memory -> disk cache -> plain TMDB search, no web fallback (that
+        // slow pipeline stays on the details screen only).
         if (TmdbClient.enabled(card.context)) {
             CoroutineScope(Dispatchers.IO).launch {
-                val info = runCatching { TmdbClient.lookup(card.context, video.title) }
+                val info = runCatching { TmdbClient.lookupQuick(card.context, video.title) }
                     .getOrNull() ?: return@launch
                 if (card.tag != video) return@launch
                 val poster = info.posterPath?.let { path ->

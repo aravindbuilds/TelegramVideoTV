@@ -21,6 +21,7 @@ import com.tgtv.videotv.model.VideoItem
 import com.tgtv.videotv.model.Watchlist
 import com.tgtv.videotv.svc.DownloadService
 import com.tgtv.videotv.store.VideoLibrary
+import com.tgtv.videotv.td.CloudBackup
 import com.tgtv.videotv.td.TdLib
 import com.tgtv.videotv.td.TmdbClient
 import kotlinx.coroutines.Dispatchers
@@ -88,6 +89,8 @@ class DetailsActivity : AppCompatActivity() {
         btnWatchlist.setOnClickListener {
             val added = Watchlist.toggle(this, video)
             renderWatchlistState(added)
+            // Fold the new My List into the cloud backup (throttled)
+            CloudBackup.request(this)
         }
 
         // Remove action = hides title locally without deleting from Telegram post

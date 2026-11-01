@@ -18,10 +18,14 @@ import com.tgtv.videotv.model.VideoItem
 import com.tgtv.videotv.model.VideoMapper
 import com.tgtv.videotv.svc.DownloadService
 import com.tgtv.videotv.td.Credentials
+import com.tgtv.videotv.td.CloudBackup
+import com.tgtv.videotv.td.ProgressSync
 import com.tgtv.videotv.td.TdError
 import com.tgtv.videotv.td.TdLib
 import com.tgtv.videotv.store.VideoLibrary
 import com.tgtv.videotv.model.Watchlist
+import com.tgtv.videotv.ota.UpdateManager
+import com.tgtv.videotv.ota.Updater
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -32,6 +36,13 @@ class MainBrowseFragment : BrowseSupportFragment() {
 
     private var loading = false
     private var sentToLogin = false
+
+    // Kept as fields so their card subtitle can be swapped live as the
+    // update state advances (check -> download -> install)
+    private var updateAction =
+        ActionItem(ACTION_CHECK_UPDATES, "⇣", "Check for updates", "Install the newest TGTV in-app")
+    private var betaAction =
+        ActionItem(ACTION_BETA_UPDATES, "β", "Beta updates", "Off — stable versions only")
 
     private val rowsAdapter = ArrayObjectAdapter(
         ListRowPresenter(FocusHighlight.ZOOM_FACTOR_MEDIUM).apply { shadowEnabled = false },
@@ -46,6 +57,10 @@ class MainBrowseFragment : BrowseSupportFragment() {
                 ActionItem(ACTION_SIGN_OUT, "⎋", "Sign out", "Forget this session and start over"),
                 ActionItem(ACTION_TMDB, "★", "TMDB metadata", "Real titles, years and ratings on the cards"),
                 ActionItem(ACTION_SUBS, "ⓒ", "Subtitles", "On/off, languages and size"),
+                ActionItem(ACTION_SEARCH, "⌕", "Search videos", "All chats, channels and groups"),
+                ActionItem(ACTION_BACKUP, "☁", "Backup", "Save prefs + progress to Saved Messages"),
+                updateAction,
+                betaAction,
             ),
         )
     }
@@ -78,6 +93,20 @@ class MainBrowseFragment : BrowseSupportFragment() {
         adapter = rowsAdapter
         TdLib.addListener(videoUpdateListener)
         viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) { loadContent() }
+        // Sync the beta opt-in card with the stored pref (default "Off" is
+        // only correct when the pref was never set)
+        activity?.let { updateBetaCard(it) }
+        observeUpdates()
+        // Silent update check (like the phone app): once per process, a few
+        // seconds after launch so the library paints first; a new version
+        // gets the same offer dialog a manual check shows.
+        if (!autoUpdateChecked) {
+            autoUpdateChecked = true
+            viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
+                delay(4_000)
+                context?.let { UpdateManager.check(it) }
+            }
+        }
         // The leanback title is an inflating TextView; find it and brand it
         // (bold red TGTV wordmark)
         view.post {
@@ -101,28 +130,50 @@ class MainBrowseFragment : BrowseSupportFragment() {
 
     /** A new video message arrived live -> store it and rebuild the rows soon. */
     private val videoUpdateListener: (org.drinkless.tdlib.TdApi.Object) -> Unit = { update ->
-        if (update is org.drinkless.tdlib.TdApi.UpdateNewMessage &&
-            VideoMapper.isVideoMessage(update.message.content)
-        ) {
-            // Persist the reference so restarts skip the rescan entirely
+        if (update is org.drinkless.tdlib.TdApi.UpdateNewMessage) {
+            val message = update.message
             val context = context
-            val chatTitle = TdLib.chatCache[update.message.chatId]?.title
-            val mapped = context?.let { c ->
-                VideoMapper.mapMessage(update.message, chatTitle ?: "Saved Messages")
-            }
-            if (context != null && mapped != null) {
-                VideoLibrary.upsert(context, mapped, update.message.date)
-            }
-            rebuildJob?.cancel()
-            rebuildJob = lifecycleScope.launch(Dispatchers.IO) {
-                delay(1500)
-                val activity = activity ?: return@launch
-                if (!loading) {
-                    loading = true
-                    try {
-                        buildRows(activity)
-                    } finally {
-                        loading = false
+            // Remote progress bookmark from the other device -> merge + repaint
+            val isBookmark = context != null &&
+                ProgressSync.observeMessage(context, message.chatId, message)
+            when {
+                isBookmark -> {
+                    rebuildJob?.cancel()
+                    rebuildJob = lifecycleScope.launch(Dispatchers.IO) {
+                        delay(1_500)
+                        val activity = activity ?: return@launch
+                        if (!loading) {
+                            loading = true
+                            try {
+                                buildRows(activity)
+                            } finally {
+                                loading = false
+                            }
+                        }
+                    }
+                }
+
+                VideoMapper.isVideoMessage(message.content) -> {
+                    // Persist the reference so restarts skip the rescan entirely
+                    val chatTitle = TdLib.chatCache[message.chatId]?.title
+                    val mapped = context?.let { c ->
+                        VideoMapper.mapMessage(message, chatTitle ?: "Saved Messages")
+                    }
+                    if (context != null && mapped != null) {
+                        VideoLibrary.upsert(context, mapped, message.date)
+                    }
+                    rebuildJob?.cancel()
+                    rebuildJob = lifecycleScope.launch(Dispatchers.IO) {
+                        delay(1500)
+                        val activity = activity ?: return@launch
+                        if (!loading) {
+                            loading = true
+                            try {
+                                buildRows(activity)
+                            } finally {
+                                loading = false
+                            }
+                        }
                     }
                 }
             }
@@ -162,7 +213,18 @@ class MainBrowseFragment : BrowseSupportFragment() {
             }
             ACTION_TMDB -> showTmdbDialog(activity)
             ACTION_SUBS -> showSubtitlesDialog(activity)
-            ACTION_ADD_CHATS -> showLibraryChatsDialog(activity)
+            ACTION_ADD_CHATS -> {
+                showLibraryChatsDialog(activity)
+                // Pins changed -> fold them into the cloud backup (throttled)
+                CloudBackup.request(activity)
+            }
+            ACTION_SEARCH -> showSearchInput(activity)
+            ACTION_BACKUP -> {
+                Toast.makeText(activity, "Backing up to Saved Messages...", Toast.LENGTH_SHORT).show()
+                CloudBackup.request(activity, force = true)
+            }
+            ACTION_CHECK_UPDATES -> onUpdateCardTap(activity)
+            ACTION_BETA_UPDATES -> showBetaUpdatesDialog(activity)
         }
     }
 
@@ -315,6 +377,9 @@ class MainBrowseFragment : BrowseSupportFragment() {
 
     override fun onResume() {
         super.onResume()
+        // If the user just granted "Install unknown apps" for us, the pending
+        // installer launches right away (phone-app behavior)
+        UpdateManager.resumeInstall(requireContext())
         viewLifecycleOwner.lifecycleScope.launch {
             TdLib.authErrors.collect { message -> activity?.let { status(it, message) } }
         }
@@ -378,6 +443,12 @@ class MainBrowseFragment : BrowseSupportFragment() {
         status(activity, "Loading your library...")
         try {
             buildRows(activity)
+            // One cloud restore per process: merges the newest Saved
+            // Messages backup (prefs + watchlist + progress from the phone)
+            if (!cloudRestored) {
+                cloudRestored = true
+                CloudBackup.restore(activity)
+            }
         } catch (e: TdError) {
             status(activity, "Telegram error: ${e.message}")
         } catch (e: Exception) {
@@ -388,7 +459,18 @@ class MainBrowseFragment : BrowseSupportFragment() {
     }
 
     private suspend fun buildRows(activity: Activity) {
+        // Fast paint (mobile app's strategy): the local SQLite index puts
+        // the library on screen instantly - no Telegram round trips - while
+        // the full scan below runs; it repaints with anything newer.
+        if (rowsAdapter.size() <= 1) {
+            val quick = quickRows(activity)
+            if (quick.isNotEmpty()) paintRows(activity, quick, emptyState = false)
+        }
         val rows = mutableListOf<VideoRow>()
+        // Active search results lead the screen until cleared
+        searchResults?.takeIf { it.isNotEmpty() && searchQuery != null }?.let {
+            rows.add(VideoRow(-2L, "Search: \"$searchQuery\"", it, hasMore = false))
+        }
         // The whole watchlist leads the screen like a Netflix "My List" row
         val saved = Watchlist.all(activity)
         if (saved.isNotEmpty()) {
@@ -401,22 +483,29 @@ class MainBrowseFragment : BrowseSupportFragment() {
                     if (videos.isEmpty()) null else VideoRow.from(chat, videos, hasMore = false)
                 },
         )
+        paintRows(activity, rows, emptyState = true)
+    }
+
+    /** Pushes [rows] into the adapter on the UI thread. */
+    private fun paintRows(activity: Activity, rows: List<VideoRow>, emptyState: Boolean) {
         activity.runOnUiThread {
             rowsAdapter.clear()
             if (rows.isEmpty()) {
-                val isUser = TdLib.sessionIsUser
-                status(
-                    activity,
-                    if (isUser) {
-                        "No videos in Saved Messages yet.\n" +
-                            "On your phone, send or forward a video to \"Saved Messages\",\n" +
-                            "then press Refresh - or pin more chats: Settings -> Add chats."
-                    } else {
-                        "Bots cannot read chat history, but what you have seen\n" +
-                            "is already saved here - forward or post a new video too.\n" +
-                            "For the full history use \"Pair via phone\" and sign in with QR."
-                    },
-                )
+                if (emptyState) {
+                    val isUser = TdLib.sessionIsUser
+                    status(
+                        activity,
+                        if (isUser) {
+                            "No videos in Saved Messages yet.\n" +
+                                "On your phone, send or forward a video to \"Saved Messages\",\n" +
+                                "then press Refresh - or pin more chats: Settings -> Add chats."
+                        } else {
+                            "Bots cannot read chat history, but what you have seen\n" +
+                                "is already saved here - forward or post a new video too.\n" +
+                                "For the full history use \"Pair via phone\" and sign in with QR."
+                        },
+                    )
+                }
             } else {
                 status(activity, null)
             }
@@ -430,6 +519,27 @@ class MainBrowseFragment : BrowseSupportFragment() {
             }
             rowsAdapter.add(ListRow(HeaderItem("Settings"), actionsAdapter))
         }
+    }
+
+    /**
+     * Rows built purely from the local SQLite index - zero Telegram calls.
+     * Painted first so a cold start with a warm index never shows
+     * "Loading your library..."; the live scan refreshes right after.
+     */
+    private fun quickRows(activity: Activity): List<VideoRow> {
+        val context = context ?: return emptyList()
+        val rows = mutableListOf<VideoRow>()
+        val saved = Watchlist.all(activity)
+        if (saved.isNotEmpty()) {
+            rows.add(VideoRow(-1L, "My List", saved, hasMore = false))
+        }
+        VideoLibrary.chatIds(context).forEach { (id, title, _) ->
+            val items = VideoLibrary.chatItems(context, id)
+            if (items.isNotEmpty()) {
+                rows.add(VideoRow(id, title.ifBlank { "Chat $id" }, items, hasMore = false))
+            }
+        }
+        return rows
     }
 
     /**
@@ -463,14 +573,21 @@ class MainBrowseFragment : BrowseSupportFragment() {
             }
             return chats
         }
-        val deadline = withTimeoutOrNull(10_000L) {
-            while (TdLib.chatCache.isEmpty()) delay(250)
-            true
-        }
-        if (deadline == null) {
-            // No UpdateNewChat arrived within 10 s: bots only learn chats as
-            // they are added - surface that instead of failing silently
-            TdLib.log("no chats received from update stream")
+        // Chats stored in the local index let the library paint right away;
+        // only when there is NOTHING stored yet (fresh bot install) wait for
+        // the UpdateNewChat stream - bots learn chats only as messages land.
+        val ctx = context
+        val storedChats = ctx?.let { VideoLibrary.chatIds(it) } ?: emptyList()
+        if (TdLib.chatCache.isEmpty() && storedChats.isEmpty()) {
+            val deadline = withTimeoutOrNull(10_000L) {
+                while (TdLib.chatCache.isEmpty()) delay(250)
+                true
+            }
+            if (deadline == null) {
+                // No UpdateNewChat arrived within 10 s: bots only learn chats
+                // as they are added - surface that instead of failing silently
+                TdLib.log("no chats received from update stream")
+            }
         }
         val chats = TdLib.chatCache.values
             .filter { it.title.isNotBlank() }
@@ -481,9 +598,8 @@ class MainBrowseFragment : BrowseSupportFragment() {
         // This is what makes bot sessions survive cold starts: TDLib 1.8
         // announces a group to the bot only when a NEW message lands there,
         // so without this the library would stay empty until one does.
-        val ctx = context ?: return chats.sortedByDescending { it.lastMessage?.date ?: 0 }
         val storedDates = mutableMapOf<Long, Int>()
-        VideoLibrary.chatIds(ctx).forEach { (id, title, newest) ->
+        storedChats.forEach { (id, title, newest) ->
             if (!known.add(id)) return@forEach
             storedDates[id] = newest
             val live = runCatching {
@@ -576,6 +692,9 @@ class MainBrowseFragment : BrowseSupportFragment() {
                 TdLib.send(TdApi.GetChatHistory(chat.id, 0, 0, LIMIT, false))
             }.onSuccess { hist ->
                 hist.messages?.forEach {
+                    // Sync bookmarks from the other device merge into the
+                    // local store here; they are never shown as videos
+                    if (ProgressSync.observeMessage(context, chat.id, it)) return@forEach
                     VideoMapper.mapMessage(it, chat.title)?.let { v -> found.add(it to v) }
                 }
             }
@@ -626,6 +745,254 @@ class MainBrowseFragment : BrowseSupportFragment() {
         activity.runOnUiThread { (activity as? MainActivity)?.setStatus(message) }
     }
 
+    // ---------------------------------------------------------------- search
+
+    /** Current search results (in-memory only - the index stays untouched). */
+    private var searchResults: List<VideoItem>? = null
+    private var searchQuery: String? = null
+
+    private fun showSearchInput(activity: Activity) {
+        val input = android.widget.EditText(activity).apply {
+            hint = "Movie, series, channel file..."
+            setSingleLine()
+            setText(searchQuery)
+        }
+        activity.runOnUiThread {
+            AlertDialog.Builder(activity)
+                .setTitle("Search all of Telegram")
+                .setMessage(
+                    "Searches every chat, channel and group on this account " +
+                        "plus the local library - not just your pinned chats.",
+                )
+                .setView(input)
+                .setPositiveButton("Search") { _, _ ->
+                    runSearch(activity, input.text.toString())
+                }
+                .setNeutralButton("Clear") { _, _ ->
+                    searchResults = null
+                    searchQuery = null
+                    refreshRows()
+                }
+                .setNegativeButton("Cancel", null)
+                .show()
+        }
+    }
+
+    /** Local index first (instant), then Telegram's global account search. */
+    private fun runSearch(activity: Activity, raw: String) {
+        val q = raw.trim()
+        if (q.isEmpty()) return
+        viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
+            val context = context ?: return@launch
+            val results = LinkedHashMap<Pair<Long, Long>, VideoItem>()
+            VideoLibrary.search(context, q).forEach { results[it.chatId to it.messageId] = it }
+            if (TdLib.sessionIsUser) {
+                // Global search covers every chat the account can see,
+                // including broadcast channels you never pinned to the TV
+                val filters = listOf(
+                    TdApi.SearchMessagesFilterVideo(),
+                    TdApi.SearchMessagesFilterDocument(),
+                )
+                for (filter in filters) {
+                    runCatching {
+                        TdLib.send(TdApi.SearchMessages(null, q, "", 50, filter, null, 0, 0))
+                    }.onSuccess { found ->
+                        found.messages?.forEach { msg ->
+                            val title = TdLib.chatCache[msg.chatId]?.title
+                                ?: runCatching {
+                                    (TdLib.send(TdApi.GetChat(msg.chatId)) as? TdApi.Chat)?.title
+                                }.getOrNull() ?: "Chat"
+                            VideoMapper.mapMessage(msg, title)?.let { v ->
+                                results.putIfAbsent(v.chatId to v.messageId, v)
+                            }
+                        }
+                    }
+                }
+            }
+            searchQuery = q
+            searchResults = results.values.toList()
+            viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
+                activity?.let { buildRows(it) }
+            }
+            if (searchResults?.isEmpty() == true) {
+                activity.runOnUiThread {
+                    Toast.makeText(activity, "No videos found for \"$q\"", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
+    // ---------------------------------------------------------------- updates
+
+    /** True while the running check was started silently at launch (no toasts). */
+    private var silentUpdates = true
+
+    /** The check-for-updates offer/progress dialog, when one is on screen. */
+    private var updateDialog: AlertDialog? = null
+
+    /** Tag already offered in a dialog - avoids re-popping it on every emission. */
+    private var offeredTag: String? = null
+
+    /** Renders every [UpdateManager.state] change: dialogs, toasts, card subtitle. */
+    private fun observeUpdates() {
+        viewLifecycleOwner.lifecycleScope.launch {
+            UpdateManager.state.collect { st ->
+                val activity = activity ?: return@collect
+                updateUpdateCard(st)
+                when (st.phase) {
+                    UpdateManager.Phase.AVAILABLE -> showUpdateOffer(activity, st)
+
+                    UpdateManager.Phase.DOWNLOADING -> showDownloadProgress(activity, st)
+
+                    UpdateManager.Phase.READY -> {
+                        dismissUpdateDialog()
+                        tryInstall(activity)
+                    }
+
+                    UpdateManager.Phase.UP_TO_DATE -> {
+                        dismissUpdateDialog()
+                        if (!silentUpdates) {
+                            Toast.makeText(
+                                activity,
+                                "You're on the latest version (v${st.tag})",
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                        }
+                    }
+
+                    UpdateManager.Phase.FAILED -> {
+                        dismissUpdateDialog()
+                        if (!silentUpdates) {
+                            Toast.makeText(
+                                activity,
+                                "Update check failed - check your connection and try again",
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                        }
+                    }
+
+                    else -> Unit
+                }
+            }
+        }
+    }
+
+    /** Tap on the "Check for updates" card: resume/advance the current flow. */
+    private fun onUpdateCardTap(activity: Activity) {
+        silentUpdates = false
+        when (UpdateManager.state.value.phase) {
+            UpdateManager.Phase.AVAILABLE -> showUpdateOffer(activity, UpdateManager.state.value)
+            UpdateManager.Phase.DOWNLOADING ->
+                showDownloadProgress(activity, UpdateManager.state.value)
+
+            UpdateManager.Phase.READY -> tryInstall(activity)
+
+            UpdateManager.Phase.CHECKING ->
+                Toast.makeText(activity, "Checking for updates...", Toast.LENGTH_SHORT).show()
+
+            else -> UpdateManager.check(activity)
+        }
+    }
+
+    private fun showUpdateOffer(activity: Activity, st: UpdateManager.UpdateState) {
+        if (offeredTag == st.tag && updateDialog?.isShowing == true) return
+        offeredTag = st.tag
+        updateDialog = AlertDialog.Builder(activity)
+            .setTitle("Update available${if (st.prerelease) " (beta)" else ""}")
+            .setMessage("TGTV v${st.tag} is ready to install.")
+            .setPositiveButton("Download") { _, _ -> UpdateManager.download(activity) }
+            .setNegativeButton("Later", null)
+            .show()
+    }
+
+    private fun showDownloadProgress(activity: Activity, st: UpdateManager.UpdateState) {
+        val existing = updateDialog
+        if (existing != null && existing.isShowing) {
+            existing.setTitle("Downloading update")
+            existing.setMessage("TGTV v${st.tag} — ${st.progress}%")
+            return
+        }
+        updateDialog = AlertDialog.Builder(activity)
+            .setTitle("Downloading update")
+            .setMessage("TGTV v${st.tag} — ${st.progress}%")
+            .setNegativeButton("Hide", null)
+            .show()
+    }
+
+    private fun tryInstall(activity: Activity) {
+        when (UpdateManager.install(activity)) {
+            Updater.InstallResult.NEEDS_PERMISSION ->
+                Toast.makeText(
+                    activity,
+                    "Allow \"Install unknown apps\" for TGTV, then try again",
+                    Toast.LENGTH_LONG,
+                ).show()
+
+            Updater.InstallResult.FAILED ->
+                Toast.makeText(activity, "Could not start the installer - try again", Toast.LENGTH_SHORT)
+                    .show()
+
+            else -> Unit
+        }
+    }
+
+    private fun dismissUpdateDialog() {
+        updateDialog?.dismiss()
+        updateDialog = null
+    }
+
+    /** Live subtitle on the "Check for updates" card as the flow advances. */
+    private fun updateUpdateCard(st: UpdateManager.UpdateState) {
+        val sub = when (st.phase) {
+            UpdateManager.Phase.AVAILABLE ->
+                "v${st.tag}${if (st.prerelease) " (beta)" else ""} available"
+            UpdateManager.Phase.DOWNLOADING -> "Downloading v${st.tag} — ${st.progress}%"
+            UpdateManager.Phase.READY -> "v${st.tag} ready — select to install"
+            UpdateManager.Phase.UP_TO_DATE -> "Up to date (v${st.tag})"
+            UpdateManager.Phase.FAILED -> "Check failed — select to retry"
+            else -> "Install the newest TGTV in-app"
+        }
+        if (updateAction.sub != sub) {
+            val pos = actionsAdapter.indexOf(updateAction)
+            if (pos >= 0) {
+                updateAction = updateAction.copy(sub = sub)
+                actionsAdapter.replace(pos, updateAction)
+            }
+        }
+    }
+
+    /** Beta opt-in dialog, matching the TMDB dialog's on/off pattern. */
+    private fun showBetaUpdatesDialog(activity: Activity) {
+        val on = Credentials.betaUpdates(activity)
+        AlertDialog.Builder(activity)
+            .setTitle("Beta updates")
+            .setMessage(
+                if (on) {
+                    "On - beta (pre-release) versions are offered in-app as soon as they publish."
+                } else {
+                    "Off - only stable versions are offered in-app."
+                },
+            )
+            .setPositiveButton(if (on) "Stable only" else "Include betas") { _, _ ->
+                Credentials.setBetaUpdates(activity, !on)
+                updateBetaCard(activity)
+                UpdateManager.check(activity, !on)
+            }
+            .setNeutralButton("Cancel", null)
+            .show()
+    }
+
+    private fun updateBetaCard(activity: Activity) {
+        val sub = if (Credentials.betaUpdates(activity)) "On — betas offered too" else "Off — stable versions only"
+        if (betaAction.sub != sub) {
+            val pos = actionsAdapter.indexOf(betaAction)
+            if (pos >= 0) {
+                betaAction = betaAction.copy(sub = sub)
+                actionsAdapter.replace(pos, betaAction)
+            }
+        }
+    }
+
     companion object {
         const val LIMIT = 60
         const val ACTION_REFRESH = 1
@@ -634,8 +1001,18 @@ class MainBrowseFragment : BrowseSupportFragment() {
         const val ACTION_TMDB = 4
         const val ACTION_SUBS = 5
         const val ACTION_ADD_CHATS = 6
+        const val ACTION_CHECK_UPDATES = 7
+        const val ACTION_BETA_UPDATES = 8
+        const val ACTION_SEARCH = 9
+        const val ACTION_BACKUP = 10
 
         /** Set when a Remove happens elsewhere; guarantees a row rebuild. */
         var forceRebuild = false
+
+        /** The silent update check runs once per process, not per fragment. */
+        var autoUpdateChecked = false
+
+        /** The cloud-backup restore runs once per process. */
+        var cloudRestored = false
     }
 }

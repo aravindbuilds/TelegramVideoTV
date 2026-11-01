@@ -64,6 +64,12 @@ class LoginActivity : AppCompatActivity() {
                 enterMode(Mode.QR)
             }
         }
+
+        // TV-first: the QR card is the one-press path (baked credentials),
+        // so it gets focus by default. D-pad LEFT/RIGHT is dispatched
+        // manually in dispatchKeyEvent - plain focus search is unreliable
+        // on some remotes.
+        findViewById<View>(R.id.qrCard).requestFocus()
         findViewById<View>(R.id.backButton).setOnClickListener {
             mode = null
             choicePane.visibility = View.VISIBLE
@@ -83,6 +89,30 @@ class LoginActivity : AppCompatActivity() {
 
     private companion object {
         const val EXTRA_MODE = "login_mode"
+    }
+
+    /**
+     * The two sign-in cards are toggled manually on D-pad LEFT/RIGHT -
+     * focus search inside the chooser pane is flaky on some TV remotes,
+     * which made the cards feel "dead" to arrow keys.
+     */
+    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
+        if (event.action == android.view.KeyEvent.ACTION_DOWN &&
+            choicePane.visibility == View.VISIBLE &&
+            (event.keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT ||
+                event.keyCode == android.view.KeyEvent.KEYCODE_DPAD_RIGHT)
+        ) {
+            val target = if (event.keyCode == android.view.KeyEvent.KEYCODE_DPAD_RIGHT) {
+                R.id.qrCard
+            } else {
+                R.id.botCard
+            }
+            if (currentFocus?.id != target) {
+                findViewById<View>(target).requestFocus()
+                return true
+            }
+        }
+        return super.dispatchKeyEvent(event)
     }
 
     private fun enterMode(m: Mode) {

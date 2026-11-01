@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- FileProvider paths: the OTA updater shares the downloaded APK with the
+     system package installer. -->
+<paths>
+    <cache-path name="ota" path="ota/" />
+</paths>

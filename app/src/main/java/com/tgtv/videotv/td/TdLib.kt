@@ -303,6 +303,46 @@ object TdLib {
         Log.i(TAG, message)
     }
 
+    // ---------------- Phone (user) login actions ----------------
+    // Ported from the phone app: QR sign-in can pause at a code / 2FA
+    // password / phone-number step, and the TV must be able to finish it.
+
+    /** Sign in with a phone number instead of the QR (code arrives next). */
+    fun requestPhoneCode(phone: String) {
+        appScope.launch {
+            runCatching {
+                send(
+                    TdApi.SetAuthenticationPhoneNumber(
+                        phone.trim(),
+                        TdApi.PhoneNumberAuthenticationSettings(
+                            false, false, false, false, false, null, arrayOf<String>(),
+                        ),
+                    ),
+                )
+            }.onFailure { error -> _authErrors.emit(error.message ?: "Could not send code") }
+        }
+    }
+
+    fun resendPhoneCode() {
+        appScope.launch { runCatching { send(TdApi.ResendAuthenticationCode()) } }
+    }
+
+    /** The login code (Telegram message or SMS). */
+    fun submitCode(code: String) {
+        appScope.launch {
+            runCatching { send(TdApi.CheckAuthenticationCode(code.trim())) }
+                .onFailure { error -> _authErrors.emit(error.message ?: "Wrong code") }
+        }
+    }
+
+    /** Optional cloud password for 2FA-protected accounts. */
+    fun submitPassword(password: String) {
+        appScope.launch {
+            runCatching { send(TdApi.CheckAuthenticationPassword(password)) }
+                .onFailure { error -> _authErrors.emit(error.message ?: "Wrong password") }
+        }
+    }
+
     /** Fire-and-forget send (results/updates still flow through [dispatchUpdate]). */
     fun fire(function: TdApi.Function<*>) {
         client?.send(function, Client.ResultHandler { })
