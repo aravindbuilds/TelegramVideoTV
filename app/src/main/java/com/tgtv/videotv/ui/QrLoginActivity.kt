@@ -105,7 +105,8 @@ class QrLoginActivity : AppCompatActivity() {
                         if (step == null) status.text = "Preparing QR code..."
                     }
                     is TdApi.AuthorizationStateWaitOtherDeviceConfirmation -> {
-                        if (step == null) status.text = getString(R.string.qr_instructions)
+                        // The layout already shows the scan instructions
+                        if (step == null) status.text = ""
                     }
                     is TdApi.AuthorizationStateWaitCode ->
                         showInput(

@@ -42,6 +42,17 @@ object TdLib {
     private var filesRoot: File? = null
     private val capRunning = java.util.concurrent.atomic.AtomicBoolean(false)
 
+    /** Application context for restarts; set in [startInternal]. */
+    private var appContext: android.content.Context? = null
+
+    /** Set while a deliberate close ([resetDb]) is in flight - the closed
+     *  update it produces must not trigger the auto-restart below. */
+    @Volatile
+    private var deliberateClose = false
+
+    /** Unexpected client restarts in this process; reset on successful Ready. */
+    private var closedRestarts = 0
+
     // ---------------- Playback stream cache janitor ----------------
 
     /**
@@ -228,6 +239,8 @@ object TdLib {
 
     private fun startInternal(context: Context) {
         if (client != null) return
+        deliberateClose = false
+        appContext = context.applicationContext
         // Reset all session-observables BEFORE creating the client: TDLib can
         // report its first auth state within milliseconds of Client.create and
         // a later reset would silently swallow it (login would hang forever).
@@ -279,6 +292,7 @@ object TdLib {
                     }
                     is TdApi.AuthorizationStateReady -> {
                         authJob?.cancel()
+                        closedRestarts = 0
                         // Identify the session (bot vs user) for UI branching
                         appScope.launch {
                             runCatching { ensureMe() }
@@ -352,6 +366,31 @@ object TdLib {
 
     fun removeListener(listener: (TdApi.Object) -> Unit) = listeners.remove(listener)
 
+    /**
+     * TDLib closed itself (session revoked, hard device kill, database
+     * trouble). Without a restart every later request fails with
+     * "Request aborted" forever and, worst, the QR login screen shows a
+     * blank code because the dead client never emits a link. Recreate the
+     * client (max 3 times, then surface it) unless the close was deliberate.
+     */
+    private fun onClientClosed() {
+        if (deliberateClose || client == null) return
+        appScope.launch {
+            synchronized(this@TdLib) {
+                if (deliberateClose || client == null) return@launch
+                if (closedRestarts >= 3) {
+                    Log.e(TAG, "TDLib closed $closedRestarts times - giving up, restart the app")
+                    _authErrors.tryEmit("Telegram connection lost - restart TGTV")
+                    return@launch
+                }
+                closedRestarts++
+                Log.i(TAG, "TDLib client closed - restarting (attempt $closedRestarts)")
+                client = null
+                appContext?.let { startInternal(it) }
+            }
+        }
+    }
+
     private fun dispatchUpdate(o: TdApi.Object) {
         when (o) {
             is TdApi.UpdateAuthorizationState -> {
@@ -362,6 +401,7 @@ object TdLib {
                         _qrLink.value = st.link
                     is TdApi.AuthorizationStateReady ->
                         _qrLink.value = null
+                    is TdApi.AuthorizationStateClosed -> onClientClosed()
                     else -> Unit
                 }
             }
@@ -419,6 +459,7 @@ object TdLib {
      * client and a stale bot session makes user-only methods fail.
      */
     suspend fun resetDb(context: Context) {
+        deliberateClose = true
         authJob?.cancel()
         authJob = null
         _qrLink.value = null
