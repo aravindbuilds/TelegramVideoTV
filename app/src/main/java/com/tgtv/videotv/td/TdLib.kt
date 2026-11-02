@@ -221,6 +221,28 @@ object TdLib {
         return sessionIsUser
     }
 
+    /**
+     * Resolves the Saved Messages chat (own user id) for user sessions,
+     * tolerating the fresh-login race: right after a QR sign-in the own
+     * chat is not in TDLib's cache yet and every GetChat / SendMessage /
+     * SearchChatMessages against the own id answers "Chat not found" -
+     * which painted an empty library over a full index. Loads the main
+     * chat list first, then retries with backoff for up to ~10 s.
+     * Returns null when the session is not a user or it never resolves.
+     */
+    suspend fun ownChat(): TdApi.Chat? {
+        if (!ensureMe()) return null
+        val userId = me?.id ?: return null
+        if (chatCache.isEmpty()) runCatching { loadChatsBlocking() }
+        repeat(6) { attempt ->
+            runCatching { send(TdApi.GetChat(userId)) as? TdApi.Chat }
+                .getOrNull()?.let { return it }
+            delay(500L * (attempt + 1))
+        }
+        log("ownChat: GetChat($userId) still unresolved after retries")
+        return null
+    }
+
     private var authJob: Job? = null
     private var sentParameters = false
 

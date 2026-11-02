@@ -680,14 +680,11 @@ class MainBrowseFragment : BrowseSupportFragment() {
             // overwhelming (and privacy-hostile) on a shared TV. Pin the
             // library to Saved Messages by default - the one chat that
             // exists precisely for this "send it to my TV" use. The Saved
-            // Messages chat id IS the user's own id, so GetChat resolves it
-            // directly without paging the whole chat list. Anything the
-            // user added via Settings -> Add chats joins it.
-            val userId = TdLib.me?.id ?: return emptyList()
-            val chats = mutableListOf<TdApi.Chat>()
-            runCatching { TdLib.send(TdApi.GetChat(userId)) as? TdApi.Chat }
-                .getOrNull()?.let { chats.add(it) }
-            val savedId = chats.firstOrNull()?.id
+            // Messages chat id IS the user's own id; ownChat() waits out
+            // the fresh-login race where GetChat still says "not found".
+            val saved = TdLib.ownChat() ?: return emptyList()
+            val chats = mutableListOf(saved)
+            val savedId = saved.id
             pinnedChatIds().filter { it != savedId }.forEach { id ->
                 runCatching { TdLib.send(TdApi.GetChat(id)) as? TdApi.Chat }
                     .getOrNull()?.let { chats.add(it) }

@@ -63,8 +63,9 @@ object CloudBackup {
     }
 
     private suspend fun backup(context: Context) {
-        val savedId = TdLib.me?.id ?: return
-        if (!TdLib.sessionIsUser) return
+        // ownChat() confirms a user session and waits out the fresh-login
+        // race so SendMessage to the own id cannot fail "Chat not found"
+        val savedId = TdLib.ownChat()?.id ?: return
 
         val progress = JSONObject()
         VideoLibrary.progressAll(context).forEach { (k, v) ->
@@ -138,8 +139,7 @@ object CloudBackup {
     }
 
     private suspend fun restoreNow(context: Context) {
-        val savedId = TdLib.me?.id ?: return
-        if (!TdLib.sessionIsUser) return
+        val savedId = TdLib.ownChat()?.id ?: return
         val backups = findBackups(savedId)
         val newest = backups.maxByOrNull { it.date } ?: return
         val applied = prefs(context).getLong(PREF_LAST_APPLIED, 0L)

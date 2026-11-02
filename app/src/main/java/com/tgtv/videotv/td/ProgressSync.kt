@@ -68,9 +68,14 @@ object ProgressSync {
      * members must not see playback bookmarks.
      */
     fun sync(chatId: Long, videoMsgId: Long, positionMs: Long, durationMs: Long) {
-        val savedId = TdLib.me?.id ?: return
-        if (!TdLib.sessionIsUser || chatId != savedId || videoMsgId == 0L) return
-        scope.launch { netMutex.withLock { runCatching { postOrUpdate(chatId, videoMsgId, positionMs, durationMs) } } }
+        scope.launch {
+            // ownChat() both confirms this is a user session and waits out
+            // the fresh-login race (SendMessage to the own id otherwise
+            // dies with "Chat not found" right after a QR sign-in)
+            val savedId = TdLib.ownChat()?.id ?: return@launch
+            if (chatId != savedId || videoMsgId == 0L) return@launch
+            netMutex.withLock { runCatching { postOrUpdate(chatId, videoMsgId, positionMs, durationMs) } }
+        }
     }
 
     /** Finds our bookmark for [videoMsgId] and edits it, or posts a fresh one. */
