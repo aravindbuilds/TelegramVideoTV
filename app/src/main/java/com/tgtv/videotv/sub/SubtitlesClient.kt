@@ -49,9 +49,21 @@ object SubtitlesClient {
             else -> null
         }
         val languages = Credentials.subsLanguages(context)
+        // Series files: pin the search to the exact season/episode so the
+        // subs offered match what's playing (not episode 1 of the show).
+        // A pinned search can miss (episode not indexed) - then retry the
+        // show without episode filtering.
+        val episodeSuffix = TmdbClient.parseEpisodeInfo(video.fileName)
+            ?.let { "&season_number=${it.season}&episode_number=${it.episode}" } ?: ""
         val entry = when {
             info != null && info.tmdbId != 0 ->
-                searchEntry(apiKey, "tmdb_id=" + info.tmdbId, languages)
+                searchEntry(apiKey, "tmdb_id=" + info.tmdbId + episodeSuffix, languages)
+                    ?: if (episodeSuffix.isNotEmpty()) {
+                        searchEntry(apiKey, "tmdb_id=" + info.tmdbId, languages)
+                    } else {
+                        null
+                    }
+
             else ->
                 searchEntry(apiKey, "query=" + URLEncoder.encode(title, "UTF-8"), languages)
         } ?: return null

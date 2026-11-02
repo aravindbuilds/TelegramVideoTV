@@ -144,11 +144,22 @@ object TmdbClient {
      * "Movie.Name.2023.1080p.WEB-DL.x264-GROUP.mkv" -> "Movie Name".
      * Strips the extension, bracketed tags, release-scene tokens and separators.
      */
+    /** TV season/episode markers that break series-name matching:
+     *  "S01E05", "1x05", "Season 2 Episode 3", "EP05", "e12". */
+    private val EPISODE_MARKERS = Regex(
+        """(?i)\b(?:s\d{1,2}[\s._-]?e\d{1,4}|s\d{1,2}\b|\d{1,2}x\d{1,3}|season[\s._-]?\d{1,2}(?:[\s._-]*(?:episode|ep)[\s._-]?\d{1,4})?|episode[\s._-]?\d{1,4}|ep[\s._-]?\d{1,4}|e\d{2,4})\b""",
+    )
+
     fun parseTitle(fileName: String): String {
         var t = fileName.substringBeforeLast('.')
         t = t.replace(Regex("""\[[^\]]*]|\([^)]*\)"""), " ")
         // Unbalanced trailing paren group, e.g. "Movie.Name.(HDRip" with no ')'
         t = t.replace(Regex("""\(\s*\S.*$"""), " ")
+        // Series files: drop the season/episode marker so the SERIES name
+        // is what reaches TMDB ("Money.Heist.S05E03..." -> "Money Heist").
+        // Every episode then resolves to the same show and shares the
+        // disk-cached lookup.
+        t = t.replace(EPISODE_MARKERS, " ")
         t = t.replace(RELEASE_TOKENS, " ")
         t = t.replace(Regex("""[._\-]+\s*"""), " ")
         t = t.replace(Regex("""[()\[\]:;]"""), " ")
@@ -163,6 +174,34 @@ object TmdbClient {
             .lastOrNull()
             ?.value
             ?.toIntOrNull()
+
+    /** Season/episode coordinates of a series file; null for movies. */
+    data class EpisodeInfo(val season: Int, val episode: Int)
+
+    /**
+     * Extracts season + episode from a series file name: "S05E03", "5x03",
+     * "Season 5 Episode 3". Movies return null. Mirrors the markers
+     * [EPISODE_MARKERS] strips during title matching.
+     */
+    fun parseEpisodeInfo(fileName: String): EpisodeInfo? {
+        for (p in EPISODE_PATTERNS) {
+            val m = p.find(fileName) ?: continue
+            val s = m.groupValues[1].toIntOrNull() ?: continue
+            val e = m.groupValues[2].toIntOrNull() ?: continue
+            return EpisodeInfo(s, e)
+        }
+        return null
+    }
+
+    private val EPISODE_PATTERNS = listOf(
+        Regex("""(?i)\bs(\d{1,2})[\s._-]?e(\d{1,4})\b"""),
+        Regex("""(?i)\b(\d{1,2})x(\d{1,3})\b"""),
+        Regex("""(?i)\bseason[\s._-]?(\d{1,2})[\s._-]*(?:episode|ep)[\s._-]?(\d{1,4})\b"""),
+    )
+
+    /** "S05 E03" badge label; null for movies. */
+    fun parseEpisode(fileName: String): String? =
+        parseEpisodeInfo(fileName)?.let { "S%02d E%02d".format(it.season, it.episode) }
 
     suspend fun lookup(context: Context, fileName: String): Info? {
         ensureDisk(context)
@@ -270,18 +309,13 @@ object TmdbClient {
     /** Attempt pipeline for one base title: fuzzy + year-stripped variants.
      *  Throws when every attempt died on a transport error (never the API's fault). */
     private fun searchWithRetries(apiKey: String, base: String): Info? {
-        // Episode markers ("S01E01") poison TMDB search: no title matches
-        // with them in the query, and every word-cut variant would keep
-        // one. Strip them first and derive the whole ladder from the
-        // episode-free show title.
-        val epless = removeEpisodeTokens(base)
-        val collapsed = collapseDoubles(epless)
-        val yearless = removeYears(epless)
-        val attempts = linkedSetOf(base, epless, collapsed, yearless, collapseDoubles(yearless))
+        val collapsed = collapseDoubles(base)
+        val yearless = removeYears(base)
+        val attempts = linkedSetOf(base, collapsed, yearless, collapseDoubles(yearless))
         // Truncation tolerance: forwarded/renamed files often end mid-token
         // ("Lokah.Chapter.1.Chandra.HDRi") - retry with the trailing word(s)
         // dropped, since the tail is almost always release junk
-        val words = epless.trim().split(' ').filter { it.isNotBlank() }
+        val words = base.trim().split(' ').filter { it.isNotBlank() }
         if (words.size > 1) {
             val cut1 = words.dropLast(1).joinToString(" ")
             val cut2 = words.dropLast(2).ifEmpty { words.dropLast(1) }.joinToString(" ")
@@ -304,13 +338,6 @@ object TmdbClient {
         if (attempted in 1..transportFails && lastError != null) throw lastError
         return null
     }
-
-    /** "Show.Name.S01E02" / "Show.Name.S1E2" -> "Show.Name". */
-    private fun removeEpisodeTokens(query: String): String =
-        Regex("""(?i)\bs\d{1,2}\s?e\d{1,3}\b""")
-            .replace(query, " ")
-            .replace(Regex("""\s+"""), " ")
-            .trim()
 
     /** Collapses runs of repeated letters: "Chaadum" -> "Chadum". */
     private fun collapseDoubles(query: String): String =

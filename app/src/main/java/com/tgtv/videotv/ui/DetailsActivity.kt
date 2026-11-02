@@ -252,7 +252,9 @@ class DetailsActivity : AppCompatActivity() {
     }
 
     private fun renderFileLine() {
+        // "S05 E03" badge leads the line on series files (mobile parity)
         val parts = listOfNotNull(
+            TmdbClient.parseEpisode(video.fileName)?.takeIf { it.isNotBlank() },
             video.prettySize().ifBlank { null },
             video.prettyDuration().ifBlank { null },
             Release.describe(video.fileName).takeIf { it.isNotBlank() },
