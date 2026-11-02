@@ -270,13 +270,18 @@ object TmdbClient {
     /** Attempt pipeline for one base title: fuzzy + year-stripped variants.
      *  Throws when every attempt died on a transport error (never the API's fault). */
     private fun searchWithRetries(apiKey: String, base: String): Info? {
-        val collapsed = collapseDoubles(base)
-        val yearless = removeYears(base)
-        val attempts = linkedSetOf(base, collapsed, yearless, collapseDoubles(yearless))
+        // Episode markers ("S01E01") poison TMDB search: no title matches
+        // with them in the query, and every word-cut variant would keep
+        // one. Strip them first and derive the whole ladder from the
+        // episode-free show title.
+        val epless = removeEpisodeTokens(base)
+        val collapsed = collapseDoubles(epless)
+        val yearless = removeYears(epless)
+        val attempts = linkedSetOf(base, epless, collapsed, yearless, collapseDoubles(yearless))
         // Truncation tolerance: forwarded/renamed files often end mid-token
         // ("Lokah.Chapter.1.Chandra.HDRi") - retry with the trailing word(s)
         // dropped, since the tail is almost always release junk
-        val words = base.trim().split(' ').filter { it.isNotBlank() }
+        val words = epless.trim().split(' ').filter { it.isNotBlank() }
         if (words.size > 1) {
             val cut1 = words.dropLast(1).joinToString(" ")
             val cut2 = words.dropLast(2).ifEmpty { words.dropLast(1) }.joinToString(" ")
@@ -299,6 +304,13 @@ object TmdbClient {
         if (attempted in 1..transportFails && lastError != null) throw lastError
         return null
     }
+
+    /** "Show.Name.S01E02" / "Show.Name.S1E2" -> "Show.Name". */
+    private fun removeEpisodeTokens(query: String): String =
+        Regex("""(?i)\bs\d{1,2}\s?e\d{1,3}\b""")
+            .replace(query, " ")
+            .replace(Regex("""\s+"""), " ")
+            .trim()
 
     /** Collapses runs of repeated letters: "Chaadum" -> "Chadum". */
     private fun collapseDoubles(query: String): String =
