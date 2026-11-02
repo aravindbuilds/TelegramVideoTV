@@ -19,8 +19,32 @@ object Credentials {
     const val KEY_SUBS_TEXT_SIZE = "subs_text_size"
     const val KEY_LIBRARY_CHATS = "library_chats"
     const val KEY_BETA_UPDATES = "beta_updates"
+    const val KEY_HOME_SORT = "home_sort"
+    const val KEY_HOME_VIEW = "home_view"
     const val MODE_BOT = "bot"
     const val MODE_USER = "user"
+
+    /** Library row sort order (Settings -> Sort & view). */
+    const val SORT_NEWEST = 0
+    const val SORT_OLDEST = 1
+    const val SORT_TITLE = 2
+    const val SORT_LARGEST = 3
+
+    /** Library row style (Settings -> Sort & view). */
+    const val VIEW_CARDS = 0
+    const val VIEW_DETAILED = 1
+
+    fun homeSort(context: Context): Int = prefs(context).getInt(KEY_HOME_SORT, SORT_NEWEST)
+
+    fun setHomeSort(context: Context, mode: Int) {
+        prefs(context).edit().putInt(KEY_HOME_SORT, mode).apply()
+    }
+
+    fun homeView(context: Context): Int = prefs(context).getInt(KEY_HOME_VIEW, VIEW_CARDS)
+
+    fun setHomeView(context: Context, mode: Int) {
+        prefs(context).edit().putInt(KEY_HOME_VIEW, mode).apply()
+    }
 
     private fun prefs(context: Context): SharedPreferences =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)

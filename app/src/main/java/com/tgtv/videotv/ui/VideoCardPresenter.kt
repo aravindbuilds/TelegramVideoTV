@@ -29,13 +29,64 @@ class VideoCardPresenter : Presenter() {
         private const val CARD_HEIGHT = 450
 
         /** thumbFileId -> decoded bitmap, shared across recycled rows. */
-        private val thumbCache = HashMap<Int, android.graphics.Bitmap>()
+        internal val thumbCache = HashMap<Int, android.graphics.Bitmap>()
 
         /** TMDB image URL -> decoded bitmap for card backdrops. */
-        private val tmdbImageCache = HashMap<String, android.graphics.Bitmap>()
+        internal val tmdbImageCache = HashMap<String, android.graphics.Bitmap>()
 
         /** Which card views already got their TMDB poster (thumb must not overwrite). */
         private val tmdbApplied = java.util.WeakHashMap<View, Boolean>()
+
+        /** Downloads + downscales a Telegram thumbnail; shared with the
+         *  Continue-Watching card so both rows hit one cache. */
+        internal suspend fun loadThumb(video: VideoItem, w: Int, h: Int): android.graphics.Bitmap? {
+            if (video.thumbnailFileId == 0) return null
+            synchronized(thumbCache) {
+                thumbCache[video.thumbnailFileId]?.let { return it }
+            }
+            val bmp = runCatching {
+                val f = TdLib.downloadFully(video.thumbnailFileId, priority = 1)
+                decodeDownscaled(f.local?.path ?: return null, w, h)
+            }.getOrNull() ?: return null
+            synchronized(thumbCache) {
+                if (thumbCache.size > 300) thumbCache.clear()
+                thumbCache[video.thumbnailFileId] = bmp
+            }
+            return bmp
+        }
+
+        /** Downscales a local image file to at most [w]x[h]. */
+        private fun decodeDownscaled(path: String, w: Int, h: Int): android.graphics.Bitmap? {
+            val f = File(path)
+            if (!f.exists() || f.length() == 0L) return null
+            val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(path, opts)
+            var sample = 1
+            while (max(opts.outWidth, opts.outHeight) / (sample * 2) >= max(w, h)) sample *= 2
+            return BitmapFactory.decodeFile(path, BitmapFactory.Options().apply { inSampleSize = sample })
+        }
+
+        /** Fetches a TMDB poster (w300) or backdrop (w500); shared cache. */
+        internal fun loadTmdbImage(urlStr: String): android.graphics.Bitmap? {
+            synchronized(tmdbImageCache) {
+                tmdbImageCache[urlStr]?.let { return it }
+            }
+            val conn = URL(urlStr).openConnection() as HttpURLConnection
+            try {
+                conn.connectTimeout = 8_000
+                conn.readTimeout = 8_000
+                conn.setRequestProperty("Connection", "close")
+                if (conn.responseCode != 200) return null
+                val bmp = BitmapFactory.decodeStream(conn.inputStream) ?: return null
+                synchronized(tmdbImageCache) {
+                    if (tmdbImageCache.size > 300) tmdbImageCache.clear()
+                    tmdbImageCache[urlStr] = bmp
+                }
+                return bmp
+            } finally {
+                conn.disconnect()
+            }
+        }
     }
 
     /** Called when the user long-presses a card. Null = no download handler attached. */
@@ -180,36 +231,5 @@ class VideoCardPresenter : Presenter() {
         card.mainImage = null
         card.tag = null
         synchronized(tmdbApplied) { tmdbApplied.remove(card) }
-    }
-
-    private fun decodeDownscaled(path: String, w: Int, h: Int): android.graphics.Bitmap? {
-        val f = File(path)
-        if (!f.exists() || f.length() == 0L) return null
-        val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeFile(path, opts)
-        var sample = 1
-        while (max(opts.outWidth, opts.outHeight) / (sample * 2) >= max(w, h)) sample *= 2
-        return BitmapFactory.decodeFile(path, BitmapFactory.Options().apply { inSampleSize = sample })
-    }
-
-    private fun loadTmdbImage(urlStr: String): android.graphics.Bitmap? {
-        synchronized(tmdbImageCache) {
-            tmdbImageCache[urlStr]?.let { return it }
-        }
-        val conn = URL(urlStr).openConnection() as HttpURLConnection
-        try {
-            conn.connectTimeout = 8_000
-            conn.readTimeout = 8_000
-            conn.setRequestProperty("Connection", "close")
-            if (conn.responseCode != 200) return null
-            val bmp = BitmapFactory.decodeStream(conn.inputStream) ?: return null
-            synchronized(tmdbImageCache) {
-                if (tmdbImageCache.size > 300) tmdbImageCache.clear()
-                tmdbImageCache[urlStr] = bmp
-            }
-            return bmp
-        } finally {
-            conn.disconnect()
-        }
     }
 }

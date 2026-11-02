@@ -37,12 +37,31 @@ class MainBrowseFragment : BrowseSupportFragment() {
     private var loading = false
     private var sentToLogin = false
 
+    // Card renderers, shared by every row so image caches and the
+    // long-press handler are reused across rebuilds.
+    /** chatId:messageId -> (posMs, durMs, updatedMs), refreshed per rebuild. */
+    private var progressMap: Map<String, Triple<Long, Long, Long>> = emptyMap()
+    private val videoCardPresenter = VideoCardPresenter().apply {
+        onLongPress = { item -> showVideoMenu(item) }
+    }
+    private val continueCardPresenter = ContinueCardPresenter().apply {
+        onLongPress = { item -> showVideoMenu(item) }
+        progressProvider = { item ->
+            progressMap["${item.chatId}:${item.messageId}"]?.let { it.first to it.second }
+        }
+    }
+    private val detailRowPresenter = DetailRowPresenter().apply {
+        onLongPress = { item -> showVideoMenu(item) }
+    }
+
     // Kept as fields so their card subtitle can be swapped live as the
     // update state advances (check -> download -> install)
     private var updateAction =
         ActionItem(ACTION_CHECK_UPDATES, "⇣", "Check for updates", "Install the newest TGTV in-app")
     private var betaAction =
         ActionItem(ACTION_BETA_UPDATES, "β", "Beta updates", "Off — stable versions only")
+    private var sortViewAction =
+        ActionItem(ACTION_SORT_VIEW, "▤", "Sort & view", "Newest • Cards")
 
     private val rowsAdapter = ArrayObjectAdapter(
         ListRowPresenter(FocusHighlight.ZOOM_FACTOR_MEDIUM).apply { shadowEnabled = false },
@@ -53,6 +72,7 @@ class MainBrowseFragment : BrowseSupportFragment() {
             listOf(
                 ActionItem(ACTION_REFRESH, "↻", "Refresh", "Reload chats and videos"),
                 ActionItem(ACTION_ADD_CHATS, "✚", "Add chats", "Pin chats or groups to the library"),
+                sortViewAction,
                 ActionItem(ACTION_PAIR_VIA_PHONE, "◱", "Pair via phone", "Scan a QR with Telegram"),
                 ActionItem(ACTION_SIGN_OUT, "⎋", "Sign out", "Forget this session and start over"),
                 ActionItem(ACTION_TMDB, "★", "TMDB metadata", "Real titles, years and ratings on the cards"),
@@ -75,13 +95,22 @@ class MainBrowseFragment : BrowseSupportFragment() {
         setOnItemViewClickedListener { _, item, _, row ->
             when (item) {
                 is VideoItem -> {
-                    // Row siblings become the "Versions" list on the details screen
-                    val siblings = (row as? ListRow)?.adapter?.let { a ->
-                        (0 until a.size()).mapNotNull { a.get(it) as? VideoItem }
-                    } ?: listOf(item)
-                    startActivity(
-                        DetailsActivity.intent(requireContext(), item, siblings),
-                    )
+                    // "Continue Watching" plays on right where you left off,
+                    // like the phone app; every other card opens details
+                    if (row is ListRow && row.headerItem.name == "Continue Watching") {
+                        val ctx = requireContext()
+                        val pos = VideoLibrary.progressOf(ctx, item.chatId, item.messageId)?.first
+                            ?: 0L
+                        startActivity(PlayerActivity.intent(ctx, item, pos))
+                    } else {
+                        // Row siblings become the "Versions" list on the details screen
+                        val siblings = (row as? ListRow)?.adapter?.let { a ->
+                            (0 until a.size()).mapNotNull { a.get(it) as? VideoItem }
+                        } ?: listOf(item)
+                        startActivity(
+                            DetailsActivity.intent(requireContext(), item, siblings),
+                        )
+                    }
                 }
                 is ActionItem -> onAction(item)
             }
@@ -96,6 +125,7 @@ class MainBrowseFragment : BrowseSupportFragment() {
         // Sync the beta opt-in card with the stored pref (default "Off" is
         // only correct when the pref was never set)
         activity?.let { updateBetaCard(it) }
+        syncSortViewCard()
         observeUpdates()
         // Silent update check (like the phone app): once per process, a few
         // seconds after launch so the library paints first; a new version
@@ -213,6 +243,7 @@ class MainBrowseFragment : BrowseSupportFragment() {
             }
             ACTION_TMDB -> showTmdbDialog(activity)
             ACTION_SUBS -> showSubtitlesDialog(activity)
+            ACTION_SORT_VIEW -> showSortViewDialog(activity)
             ACTION_ADD_CHATS -> {
                 showLibraryChatsDialog(activity)
                 // Pins changed -> fold them into the cloud backup (throttled)
@@ -261,8 +292,57 @@ class MainBrowseFragment : BrowseSupportFragment() {
         }
     }
 
-    private fun subsLanguagesInput(activity: Activity) {
-        val input = android.widget.EditText(activity).apply {
+    /** Settings -> Sort & view: row ordering and card style, like the phone app's Sort dialog. */
+    private fun showSortViewDialog(activity: Activity) {
+        val sorts = listOf("Newest first", "Oldest first", "Title A-Z", "Largest first")
+        val views = listOf("Cards (posters)", "Detailed (file list)")
+        activity.runOnUiThread {
+            AlertDialog.Builder(activity)
+                .setTitle("Sort & view")
+                .setItems(
+                    arrayOf(
+                        "Sorted by: ${sorts.getOrElse(Credentials.homeSort(activity)) { sorts[0] }}",
+                        "View: ${views.getOrElse(Credentials.homeView(activity)) { views[0] }}",
+                        "Close",
+                    ),
+                ) { _, which ->
+                    when (which) {
+                        0 -> Credentials.setHomeSort(
+                            activity,
+                            (Credentials.homeSort(activity) + 1) % sorts.size,
+                        )
+
+                        1 -> Credentials.setHomeView(
+                            activity,
+                            (Credentials.homeView(activity) + 1) % views.size,
+                        )
+
+                        else -> return@setItems
+                    }
+                    syncSortViewCard()
+                    refreshRows()
+                }
+                .show()
+        }
+    }
+
+    /** Live subtitle on the "Sort & view" card reflecting the current choice. */
+    private fun syncSortViewCard() {
+        val activity = activity ?: return
+        val sorts = listOf("Newest", "Oldest", "Title A-Z", "Largest")
+        val sub = sorts.getOrElse(Credentials.homeSort(activity)) { sorts[0] } +
+            " • " +
+            if (Credentials.homeView(activity) == Credentials.VIEW_DETAILED) "Detailed" else "Cards"
+        if (sortViewAction.sub != sub) {
+            val pos = actionsAdapter.indexOf(sortViewAction)
+            if (pos >= 0) {
+                sortViewAction = sortViewAction.copy(sub = sub)
+                actionsAdapter.replace(pos, sortViewAction)
+            }
+        }
+    }
+
+    private fun subsLanguagesInput(activity: Activity) {        val input = android.widget.EditText(activity).apply {
             hint = "en, hi, ml"
             setSingleLine()
             setText(Credentials.subsLanguages(activity))
@@ -471,19 +551,46 @@ class MainBrowseFragment : BrowseSupportFragment() {
         searchResults?.takeIf { it.isNotEmpty() && searchQuery != null }?.let {
             rows.add(VideoRow(-2L, "Search: \"$searchQuery\"", it, hasMore = false))
         }
+        val chatRows = collectChats()
+            .mapNotNull { chat ->
+                val videos = videosFor(chat)
+                if (videos.isEmpty()) null else VideoRow.from(chat, videos, hasMore = false)
+            }
+        // "Continue Watching" leads the library (after search), Netflix style
+        continueRow(chatRows.flatMap { it.items })?.let { rows.add(it) }
         // The whole watchlist leads the screen like a Netflix "My List" row
         val saved = Watchlist.all(activity)
         if (saved.isNotEmpty()) {
             rows.add(VideoRow(-1L, "My List", saved, hasMore = false))
         }
-        rows.addAll(
-            collectChats()
-                .mapNotNull { chat ->
-                    val videos = videosFor(chat)
-                    if (videos.isEmpty()) null else VideoRow.from(chat, videos, hasMore = false)
-                },
-        )
+        rows.addAll(chatRows)
         paintRows(activity, rows, emptyState = true)
+    }
+
+    /**
+     * "Continue Watching": titles with resumable local progress (played
+     * past 10 s, not yet at the 97% watched mark), most recently watched
+     * first - the phone app's row, ported. Progress entries that reference
+     * titles absent from this scan (fresh sync bookmark whose video has not
+     * been indexed yet) are skipped until the scan picks them up.
+     */
+    private fun continueRow(allItems: List<VideoItem>): VideoRow? {
+        val context = context ?: return null
+        val progress = VideoLibrary.progressAll(context)
+        progressMap = progress
+        if (progress.isEmpty()) return null
+        val byKey = allItems.associateBy { "${it.chatId}:${it.messageId}" }
+        val stamp = HashMap<VideoItem, Long>()
+        val items = progress.entries.mapNotNull { (key, p) ->
+            val (posMs, durMs, updatedMs) = p
+            if (posMs <= 10_000L) return@mapNotNull null
+            if (durMs > 0L && posMs >= durMs * 97 / 100) return@mapNotNull null
+            val item = byKey[key] ?: return@mapNotNull null
+            stamp[item] = updatedMs
+            item
+        }.sortedByDescending { stamp[it] ?: 0L }.take(12)
+        if (items.isEmpty()) return null
+        return VideoRow(-3L, "Continue Watching", items, hasMore = false)
     }
 
     /** Pushes [rows] into the adapter on the UI thread. */
@@ -510,10 +617,13 @@ class MainBrowseFragment : BrowseSupportFragment() {
                 status(activity, null)
             }
             for (row in rows) {
-                val cardPresenter = VideoCardPresenter().apply {
-                    onLongPress = { item -> showVideoMenu(item) }
+                val presenter = when {
+                    // Continue cards carry art + progress bar regardless of view mode
+                    row.chatId == -3L -> continueCardPresenter
+                    Credentials.homeView(activity) == Credentials.VIEW_DETAILED -> detailRowPresenter
+                    else -> videoCardPresenter
                 }
-                val cards = ArrayObjectAdapter(cardPresenter)
+                val cards = ArrayObjectAdapter(presenter)
                 row.items.forEach { cards.add(it) }
                 rowsAdapter.add(ListRow(HeaderItem(row.title), cards))
             }
@@ -529,17 +639,28 @@ class MainBrowseFragment : BrowseSupportFragment() {
     private fun quickRows(activity: Activity): List<VideoRow> {
         val context = context ?: return emptyList()
         val rows = mutableListOf<VideoRow>()
+        val chatRows = VideoLibrary.chatIds(context).mapNotNull { (id, title, _) ->
+            val items = sortItems(VideoLibrary.chatItems(context, id))
+            if (items.isEmpty()) null else VideoRow(id, title.ifBlank { "Chat $id" }, items, hasMore = false)
+        }
+        continueRow(chatRows.flatMap { it.items })?.let { rows.add(it) }
         val saved = Watchlist.all(activity)
         if (saved.isNotEmpty()) {
             rows.add(VideoRow(-1L, "My List", saved, hasMore = false))
         }
-        VideoLibrary.chatIds(context).forEach { (id, title, _) ->
-            val items = VideoLibrary.chatItems(context, id)
-            if (items.isNotEmpty()) {
-                rows.add(VideoRow(id, title.ifBlank { "Chat $id" }, items, hasMore = false))
-            }
-        }
+        rows.addAll(chatRows)
         return rows
+    }
+
+    /** Orders a row's videos per Settings -> Sort & view. */
+    private fun sortItems(items: List<VideoItem>): List<VideoItem> {
+        val context = context ?: return items
+        return when (Credentials.homeSort(context)) {
+            Credentials.SORT_OLDEST -> items.sortedBy { it.messageId }
+            Credentials.SORT_TITLE -> items.sortedBy { it.title.lowercase() }
+            Credentials.SORT_LARGEST -> items.sortedByDescending { it.fileSize }
+            else -> items.sortedByDescending { it.messageId }
+        }
     }
 
     /**
@@ -621,18 +742,25 @@ class MainBrowseFragment : BrowseSupportFragment() {
             ?: emptyList()
 
     /**
-     * Settings -> Add chats: a multi-select of every chat this session knows
-     * (chat list for user sessions, chat cache + local index for bots).
-     * Pinned chats join Saved Messages in the library; unpinning hides their
-     * rows again. Titles come from the live cache, falling back to the local
-     * index so never-opened chats still read sensibly.
+     * Settings -> Add chats: a searchable multi-select of every chat this
+     * session knows (chat list for user sessions, chat cache + local index
+     * for bots). Pinned chats sit at the top, the rest follows chat recency;
+     * typing in the search box narrows the list live. Titles come from the
+     * live cache, falling back to the local index so never-opened chats
+     * still read sensibly.
      */
     private fun showLibraryChatsDialog(activity: Activity) {
         viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
             val isUser = TdLib.ensureMe()
             if (isUser) TdLib.loadChatsBlocking()
+            val context = context
             val storedTitles = context
                 ?.let { VideoLibrary.chatIds(it).associate { (id, title, _) -> id to title } }
+                ?: emptyMap()
+            // Newest activity per chat: live last message, else the newest
+            // video seen in the local index - recency order for both.
+            val recency = context
+                ?.let { VideoLibrary.chatIds(it).associate { (id, _, newest) -> id to newest } }
                 ?: emptyMap()
             val candidates = (TdLib.chatCache.values.map { it.id } + storedTitles.keys)
                 .distinct()
@@ -644,7 +772,6 @@ class MainBrowseFragment : BrowseSupportFragment() {
                             title = storedTitles[id] ?: "Chat $id"
                         }
                 }
-                .sortedByDescending { it.lastMessage?.date ?: 0 }
             if (candidates.isEmpty()) {
                 activity.runOnUiThread {
                     Toast.makeText(activity, "No chats seen yet - press Refresh first", Toast.LENGTH_SHORT).show()
@@ -652,18 +779,87 @@ class MainBrowseFragment : BrowseSupportFragment() {
                 return@launch
             }
             val pinned = Credentials.libraryChats(activity).toMutableSet()
+            // Pinned chats lead (they are the active library), then recency
+            val ordered = candidates.sortedWith(
+                compareByDescending<TdApi.Chat> { it.id.toString() in pinned }
+                    .thenByDescending { it.lastMessage?.date ?: recency[it.id] ?: 0 }
+                    .thenBy { it.title.lowercase() },
+            )
             activity.runOnUiThread {
-                val titles = candidates.map { it.title.ifBlank { "Chat ${it.id}" } }
-                val checked = candidates.map { it.id.toString() in pinned }.toBooleanArray()
+                val container = android.widget.LinearLayout(activity).apply {
+                    orientation = android.widget.LinearLayout.VERTICAL
+                    val pad = (16 * resources.displayMetrics.density).toInt()
+                    setPadding(pad, pad / 2, pad, 0)
+                }
+                val search = android.widget.EditText(activity).apply {
+                    hint = "Search chats..."
+                    setSingleLine()
+                }
+                val list = android.widget.ListView(activity).apply {
+                    choiceMode = android.widget.AbsListView.CHOICE_MODE_MULTIPLE
+                }
+                container.addView(
+                    search,
+                    android.widget.LinearLayout.LayoutParams(
+                        android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                        android.view.ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ),
+                )
+                container.addView(
+                    list,
+                    android.widget.LinearLayout.LayoutParams(
+                        android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                        0,
+                        1f,
+                    ),
+                )
+
+                fun render(query: String) {
+                    val filtered = ordered.filter {
+                        it.title.lowercase().contains(query.trim().lowercase())
+                    }
+                    list.tag = filtered
+                    list.adapter = android.widget.ArrayAdapter(
+                        activity,
+                        android.R.layout.simple_list_item_multiple_choice,
+                        filtered.map { it.title.ifBlank { "Chat ${it.id}" } },
+                    )
+                    filtered.indices.forEach { i ->
+                        list.setItemChecked(i, filtered[i].id.toString() in pinned)
+                    }
+                }
+                render("")
+                search.addTextChangedListener(
+                    object : android.text.TextWatcher {
+                        override fun beforeTextChanged(
+                            s: CharSequence?,
+                            start: Int,
+                            count: Int,
+                            after: Int,
+                        ) = Unit
+
+                        override fun onTextChanged(
+                            s: CharSequence?,
+                            start: Int,
+                            before: Int,
+                            count: Int,
+                        ) = Unit
+
+                        override fun afterTextChanged(s: android.text.Editable?) =
+                            render(s?.toString() ?: "")
+                    },
+                )
+                list.setOnItemClickListener { _, _, which, _ ->
+                    val filtered = list.tag as? List<TdApi.Chat> ?: return@setOnItemClickListener
+                    val chat = filtered.getOrNull(which) ?: return@setOnItemClickListener
+                    val id = chat.id.toString()
+                    if (id in pinned) pinned.remove(id) else pinned.add(id)
+                    list.setItemChecked(which, id in pinned)
+                }
+
                 AlertDialog.Builder(activity)
                     .setTitle("Library chats")
-                    .setMultiChoiceItems(
-                        titles.toTypedArray(),
-                        checked,
-                    ) { _, which, isChecked ->
-                        val id = candidates[which].id.toString()
-                        if (isChecked) pinned.add(id) else pinned.remove(id)
-                    }
+                    .setView(container)
                     .setPositiveButton("Save") { _, _ ->
                         Credentials.setLibraryChats(activity, pinned)
                         refreshRows()
@@ -733,12 +929,12 @@ class MainBrowseFragment : BrowseSupportFragment() {
             if (!seen.add(key)) return@forEach
             scanned.add(stored)
         }
-        // Newest first, hidden entries filtered out
-        return scanned
-            .distinctBy { it.chatId to it.messageId }
-            .filter { !VideoLibrary.isHidden(context, it.chatId, it.messageId) }
-            .sortedByDescending { it.messageId }
-            .take(LIMIT + 40)
+        // Sorted per Settings -> Sort & view, hidden entries filtered out
+        return sortItems(
+            scanned
+                .distinctBy { it.chatId to it.messageId }
+                .filter { !VideoLibrary.isHidden(context, it.chatId, it.messageId) },
+        ).take(LIMIT + 40)
     }
 
     private fun status(activity: Activity, message: String?) {
@@ -1005,6 +1201,7 @@ class MainBrowseFragment : BrowseSupportFragment() {
         const val ACTION_BETA_UPDATES = 8
         const val ACTION_SEARCH = 9
         const val ACTION_BACKUP = 10
+        const val ACTION_SORT_VIEW = 11
 
         /** Set when a Remove happens elsewhere; guarantees a row rebuild. */
         var forceRebuild = false

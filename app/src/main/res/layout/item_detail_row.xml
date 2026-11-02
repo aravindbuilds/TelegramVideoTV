@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- One "Detailed" library row: full file name on line one, chat / size /
+     duration / quality on line two. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="600dip"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:focusable="true"
+    android:focusableInTouchMode="true"
+    android:longClickable="true"
+    android:background="#141414"
+    android:paddingLeft="14dip"
+    android:paddingRight="14dip"
+    android:paddingTop="10dip"
+    android:paddingBottom="10dip">
+
+    <TextView
+        android:id="@+id/detailTitle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:singleLine="true"
+        android:ellipsize="middle"
+        android:textColor="#FFFFFF"
+        android:textSize="15sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/detailSub"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="3dip"
+        android:singleLine="true"
+        android:ellipsize="end"
+        android:textColor="#BBBBBB"
+        android:textSize="12sp" />
+</LinearLayout>
