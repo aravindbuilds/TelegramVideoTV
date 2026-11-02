@@ -51,11 +51,14 @@ object CloudBackup {
 
     /**
      * Requests a backup. Automatic callers (settings changes, progress
-     * saves) are throttled; pass [force] for the explicit "Backup" action.
+     * saves) are throttled and only run when cross-device sync is on
+     * (Credentials.syncOn, default on); pass [force] for the explicit
+     * "Sync now" action, which always runs.
      */
     fun request(context: Context, force: Boolean = false) {
         val app = context.applicationContext
         scope.launch {
+            if (!force && !Credentials.syncOn(app)) return@launch
             val last = prefs(app).getLong(PREF_LAST_BACKUP, 0L)
             if (!force && System.currentTimeMillis() - last < AUTO_BACKUP_INTERVAL_MS) return@launch
             mutex.withLock { runCatching { backup(app) } }
@@ -132,10 +135,14 @@ object CloudBackup {
      * Merges the newest cloud backup into this device. Safe to call on
      * every startup: each backup snapshot is applied at most once
      * (newest-wins merging makes repeated application a no-op anyway).
+     * [force] bypasses the sync toggle for the explicit "Sync now" action.
      */
-    fun restore(context: Context) {
+    fun restore(context: Context, force: Boolean = false) {
         val app = context.applicationContext
-        scope.launch { mutex.withLock { runCatching { restoreNow(app) } } }
+        scope.launch {
+            if (!force && !Credentials.syncOn(app)) return@launch
+            mutex.withLock { runCatching { restoreNow(app) } }
+        }
     }
 
     private suspend fun restoreNow(context: Context) {

@@ -62,6 +62,8 @@ class MainBrowseFragment : BrowseSupportFragment() {
         ActionItem(ACTION_BETA_UPDATES, "β", "Beta updates", "Off — stable versions only")
     private var sortViewAction =
         ActionItem(ACTION_SORT_VIEW, "▤", "Sort & view", "Newest • Cards")
+    private var syncAction =
+        ActionItem(ACTION_BACKUP, "⇄", "Sync across devices", "On — continue on any device")
 
     private val rowsAdapter = ArrayObjectAdapter(
         ListRowPresenter(FocusHighlight.ZOOM_FACTOR_MEDIUM).apply { shadowEnabled = false },
@@ -78,7 +80,7 @@ class MainBrowseFragment : BrowseSupportFragment() {
                 ActionItem(ACTION_TMDB, "★", "TMDB metadata", "Real titles, years and ratings on the cards"),
                 ActionItem(ACTION_SUBS, "ⓒ", "Subtitles", "On/off, languages and size"),
                 ActionItem(ACTION_SEARCH, "⌕", "Search videos", "All chats, channels and groups"),
-                ActionItem(ACTION_BACKUP, "☁", "Backup", "Save prefs + progress to Saved Messages"),
+                syncAction,
                 updateAction,
                 betaAction,
             ),
@@ -126,6 +128,7 @@ class MainBrowseFragment : BrowseSupportFragment() {
         // only correct when the pref was never set)
         activity?.let { updateBetaCard(it) }
         syncSortViewCard()
+        syncSyncCard()
         observeUpdates()
         // Silent update check (like the phone app): once per process, a few
         // seconds after launch so the library paints first; a new version
@@ -250,10 +253,7 @@ class MainBrowseFragment : BrowseSupportFragment() {
                 CloudBackup.request(activity)
             }
             ACTION_SEARCH -> showSearchInput(activity)
-            ACTION_BACKUP -> {
-                Toast.makeText(activity, "Backing up to Saved Messages...", Toast.LENGTH_SHORT).show()
-                CloudBackup.request(activity, force = true)
-            }
+            ACTION_BACKUP -> showSyncDialog(activity)
             ACTION_CHECK_UPDATES -> onUpdateCardTap(activity)
             ACTION_BETA_UPDATES -> showBetaUpdatesDialog(activity)
         }
@@ -292,36 +292,79 @@ class MainBrowseFragment : BrowseSupportFragment() {
         }
     }
 
-    /** Settings -> Sort & view: row ordering and card style, like the phone app's Sort dialog. */
+    /**
+     * Settings -> Sort & view: every option is listed with the active one
+     * marked, so the user always sees what a tap switches to. Tapping an
+     * option applies it immediately and re-renders the marks; rows stay
+     * navigable with the D-pad.
+     */
     private fun showSortViewDialog(activity: Activity) {
         val sorts = listOf("Newest first", "Oldest first", "Title A-Z", "Largest first")
         val views = listOf("Cards (posters)", "Detailed (file list)")
-        activity.runOnUiThread {
-            AlertDialog.Builder(activity)
-                .setTitle("Sort & view")
-                .setItems(
-                    arrayOf(
-                        "Sorted by: ${sorts.getOrElse(Credentials.homeSort(activity)) { sorts[0] }}",
-                        "View: ${views.getOrElse(Credentials.homeView(activity)) { views[0] }}",
-                        "Close",
-                    ),
-                ) { _, which ->
-                    when (which) {
-                        0 -> Credentials.setHomeSort(
-                            activity,
-                            (Credentials.homeSort(activity) + 1) % sorts.size,
-                        )
+        val pad = (20 * resources.displayMetrics.density).toInt()
+        val container = android.widget.LinearLayout(activity).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(pad, pad / 2, pad, 0)
+        }
+        val optionViews = mutableListOf<Pair<android.widget.TextView, Int>>()
 
-                        1 -> Credentials.setHomeView(
-                            activity,
-                            (Credentials.homeView(activity) + 1) % views.size,
-                        )
+        fun renderMarks() {
+            val sortSel = Credentials.homeSort(activity)
+            val viewSel = Credentials.homeView(activity)
+            optionViews.forEach { (tv, option) ->
+                val active = if (option < sorts.size) option == sortSel else option - sorts.size == viewSel
+                val label = if (option < sorts.size) sorts[option] else views[option - sorts.size]
+                tv.text = if (active) "✓  $label" else "    $label"
+                tv.setTextColor(if (active) 0xFFE50914.toInt() else 0xFFEDEDED.toInt())
+            }
+        }
 
-                        else -> return@setItems
+        fun addSection(title: String) {
+            container.addView(
+                android.widget.TextView(activity).apply {
+                    text = title
+                    textSize = 13f
+                    setPadding(0, pad / 2, 0, pad / 4)
+                },
+            )
+        }
+
+        fun addOption(option: Int) {
+            val tv = android.widget.TextView(activity).apply {
+                textSize = 16f
+                setPadding(pad / 3, pad / 2, pad / 3, pad / 2)
+                isFocusable = true
+                isFocusableInTouchMode = true
+                setOnClickListener {
+                    if (option < sorts.size) {
+                        Credentials.setHomeSort(activity, option)
+                    } else {
+                        Credentials.setHomeView(activity, option - sorts.size)
                     }
+                    renderMarks()
                     syncSortViewCard()
                     refreshRows()
                 }
+                setOnFocusChangeListener { v, focused ->
+                    v.animate().scaleX(if (focused) 1.04f else 1f)
+                        .scaleY(if (focused) 1.04f else 1f).setDuration(100).start()
+                }
+            }
+            optionViews.add(tv to option)
+            container.addView(tv)
+        }
+
+        addSection("SORT ORDER")
+        sorts.indices.forEach { addOption(it) }
+        addSection("VIEW")
+        (sorts.size until sorts.size + views.size).forEach { addOption(it) }
+        renderMarks()
+
+        activity.runOnUiThread {
+            AlertDialog.Builder(activity)
+                .setTitle("Sort & view")
+                .setView(container)
+                .setPositiveButton("Done", null)
                 .show()
         }
     }
@@ -339,6 +382,59 @@ class MainBrowseFragment : BrowseSupportFragment() {
                 sortViewAction = sortViewAction.copy(sub = sub)
                 actionsAdapter.replace(pos, sortViewAction)
             }
+        }
+    }
+
+    /** Live subtitle on the "Sync across devices" card. */
+    private fun syncSyncCard() {
+        val activity = activity ?: return
+        val sub = if (Credentials.syncOn(activity)) {
+            "On — continue on any device"
+        } else {
+            "Off — this device only"
+        }
+        if (syncAction.sub != sub) {
+            val pos = actionsAdapter.indexOf(syncAction)
+            if (pos >= 0) {
+                syncAction = syncAction.copy(sub = sub)
+                actionsAdapter.replace(pos, syncAction)
+            }
+        }
+    }
+
+    /**
+     * Settings -> Sync across devices: pushes this device's prefs, My List
+     * and watch progress into Saved Messages and pulls anything newer back,
+     * so a video left half-watched on the TV resumes on the phone (and the
+     * other way). Automatic sync is on by default; this also toggles it.
+     */
+    private fun showSyncDialog(activity: Activity) {
+        activity.runOnUiThread {
+            AlertDialog.Builder(activity)
+                .setTitle("Sync across devices")
+                .setItems(
+                    arrayOf(
+                        "Sync now",
+                        "Automatic sync: ${if (Credentials.syncOn(activity)) "On" else "Off"}",
+                        "Close",
+                    ),
+                ) { _, which ->
+                    when (which) {
+                        0 -> {
+                            Toast.makeText(activity, "Syncing via Saved Messages...", Toast.LENGTH_SHORT).show()
+                            CloudBackup.restore(activity, force = true)
+                            CloudBackup.request(activity, force = true)
+                        }
+
+                        1 -> {
+                            Credentials.setSyncOn(activity, !Credentials.syncOn(activity))
+                            syncSyncCard()
+                        }
+
+                        else -> return@setItems
+                    }
+                }
+                .show()
         }
     }
 

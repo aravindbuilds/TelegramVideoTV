@@ -21,6 +21,7 @@ object Credentials {
     const val KEY_BETA_UPDATES = "beta_updates"
     const val KEY_HOME_SORT = "home_sort"
     const val KEY_HOME_VIEW = "home_view"
+    const val KEY_SYNC_ON = "sync_on"
     const val MODE_BOT = "bot"
     const val MODE_USER = "user"
 
@@ -44,6 +45,13 @@ object Credentials {
 
     fun setHomeView(context: Context, mode: Int) {
         prefs(context).edit().putInt(KEY_HOME_VIEW, mode).apply()
+    }
+
+    /** Cross-device sync (Saved Messages backup + progress bookmarks). On by default. */
+    fun syncOn(context: Context): Boolean = prefs(context).getBoolean(KEY_SYNC_ON, true)
+
+    fun setSyncOn(context: Context, on: Boolean) {
+        prefs(context).edit().putBoolean(KEY_SYNC_ON, on).apply()
     }
 
     private fun prefs(context: Context): SharedPreferences =
