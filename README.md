@@ -132,7 +132,7 @@ your files never leave the Telegram network on the way to your screen. No Bot AP
 ### 1. Install TGTV on your TV
 
 Grab the APK from [Releases](https://github.com/aravindbuilds/TelegramVideoTV/releases):
-**`TGTV-v1.2-v7a.apk`** (latest) for any Android TV (~24 MB; works on every device
+**`TGTV-v1.3-beta-v7a.apk`** (latest beta) for any Android TV (~24 MB; works on every device
 including arm64/x86 ones). A **`-universal`** variant (~96 MB, all 4 ABIs) exists
 for emulators.
 
@@ -174,7 +174,7 @@ From a PC on the same Wi-Fi, in the folder containing the APK:
 
 ```powershell
 adb connect <tv-ip>:5555      # some devices use :5037, Fire TV shows the port in Settings
-adb install -r TGTV-v1.2-v7a.apk      # latest release APK
+adb install -r TGTV-v1.3-beta-v7a.apk  # latest beta APK
 adb shell am start -n com.tgtv.videotv/.ui.MainActivity
 ```
 
@@ -271,7 +271,7 @@ again after every restart.
 
 | | |
 |---|---|
-| **App version** | v1.2 (stable) — versionCode 9 |
+| **App version** | v1.3-beta — versionCode 10 |
 | **Android** | 8.0 (API 26) and newer |
 | **Tested on** | Xiaomi Mi Box 4 (Android 9, armeabi-v7a) |
 | **Variants** | **v7a** (armeabi-v7a only, ~24 MB — recommended for all devices) and **universal** (all 4 ABIs, ~96 MB — emulators / exotic arm64 devices) |
