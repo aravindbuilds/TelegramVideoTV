@@ -27,6 +27,7 @@ import com.tgtv.videotv.td.TmdbClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.Serializable
 import java.net.HttpURLConnection
 import java.net.URL
@@ -324,9 +325,13 @@ class DetailsActivity : AppCompatActivity() {
 
     private suspend fun renderTgBackdrop(thumbnailFileId: Int) {
         if (thumbnailFileId == 0) return
-        val path = runCatching {
-            TdLib.downloadFully(thumbnailFileId, priority = 1).local?.path
-        }.getOrNull() ?: return
+        // Time-boxed: ids from the index can be stale across app restarts
+        // and TDLib never answers a DownloadFile for a dead id.
+        val path = withTimeoutOrNull(8_000L) {
+            runCatching {
+                TdLib.downloadFully(thumbnailFileId, priority = 1).local?.path
+            }.getOrNull()
+        } ?: return
         withContext(Dispatchers.Main) {
             if (backdropUrl == null) {
                 decode(path, wide = true)?.let { backdrop.setImageBitmap(it) }

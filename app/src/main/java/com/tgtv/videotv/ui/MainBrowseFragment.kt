@@ -72,15 +72,17 @@ class MainBrowseFragment : BrowseSupportFragment() {
         addAll(
             0,
             listOf(
+                // Ordered by usability: frequent actions first, one-time
+                // setup (QR pairing, sign out) and update toggles last
+                ActionItem(ACTION_SEARCH, "⌕", "Search videos", "All chats, channels and groups"),
                 ActionItem(ACTION_REFRESH, "↻", "Refresh", "Reload chats and videos"),
-                ActionItem(ACTION_ADD_CHATS, "✚", "Add chats", "Pin chats or groups to the library"),
                 sortViewAction,
+                ActionItem(ACTION_ADD_CHATS, "✚", "Add chats", "Pin chats or groups to the library"),
+                syncAction,
+                ActionItem(ACTION_SUBS, "ⓒ", "Subtitles", "On/off, languages and size"),
+                ActionItem(ACTION_TMDB, "★", "TMDB metadata", "Real titles, years and ratings on the cards"),
                 ActionItem(ACTION_PAIR_VIA_PHONE, "◱", "Pair via phone", "Scan a QR with Telegram"),
                 ActionItem(ACTION_SIGN_OUT, "⎋", "Sign out", "Forget this session and start over"),
-                ActionItem(ACTION_TMDB, "★", "TMDB metadata", "Real titles, years and ratings on the cards"),
-                ActionItem(ACTION_SUBS, "ⓒ", "Subtitles", "On/off, languages and size"),
-                ActionItem(ACTION_SEARCH, "⌕", "Search videos", "All chats, channels and groups"),
-                syncAction,
                 updateAction,
                 betaAction,
             ),

@@ -9,11 +9,13 @@ import androidx.core.graphics.drawable.toDrawable
 import androidx.leanback.widget.Presenter
 import com.tgtv.videotv.R
 import com.tgtv.videotv.model.VideoItem
+import com.tgtv.videotv.td.TdLib
 import com.tgtv.videotv.td.TmdbClient
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.ceil
 
 /**
@@ -88,20 +90,43 @@ class ContinueCardPresenter : Presenter() {
         }
 
         // Art: Telegram thumbnail first (it IS the frame where they stopped
-        // watching, no TMDB round trip), poster as fallback.
+        // watching), TMDB poster as fallback. The same lookup also upgrades
+        // the title from the raw file name to "Show · Sxx Eyy".
+        // The Telegram attempt is time-boxed: the index stores file ids from
+        // a previous app process, and TDLib never answers a DownloadFile for
+        // a dead id - without the timeout the card would show no art at all.
         art.setImageDrawable(null)
         CoroutineScope(Dispatchers.IO).launch {
-            val bmp = VideoCardPresenter.loadThumb(video, 480, 270)
-                ?: runCatching { TmdbClient.lookupQuick(art.context, video.title) }.getOrNull()
-                    ?.posterPath?.let { path ->
-                        runCatching {
-                            VideoCardPresenter.loadTmdbImage(
-                                "https://image.tmdb.org/t/p/w300$path",
-                            )
-                        }.getOrNull()
-                    }
-            if (bmp != null && card.tag == video) {
-                withContext(Dispatchers.Main) { art.setImageBitmap(bmp) }
+            val bmp = withTimeoutOrNull(8_000L) {
+                VideoCardPresenter.loadThumb(video, 480, 270)
+            }
+            if (bmp == null) {
+                TdLib.log("continue: no thumb for '${video.title}' (${video.thumbnailFileId}) - falling back to TMDB")
+            }
+            var resolvedTitle: String? = null
+            val poster = bmp ?: runCatching {
+                TmdbClient.lookupQuick(art.context, video.title)
+            }.getOrNull()?.also { resolvedTitle = it.title }?.posterPath?.let { path ->
+                runCatching {
+                    VideoCardPresenter.loadTmdbImage(
+                        "https://image.tmdb.org/t/p/w300$path",
+                    )
+                }.getOrNull()
+            }
+            if (poster != null) {
+                TdLib.log("continue: art ready via ${bmp != null} for '${video.title}'")
+            } else {
+                TdLib.log("continue: NO art for '${video.title}'")
+            }
+            withContext(Dispatchers.Main) {
+                // "Show Name · S01 E02" beats the raw release name
+                val ep = TmdbClient.parseEpisode(video.fileName)
+                resolvedTitle?.let { t ->
+                    title.text = if (ep.isNullOrBlank()) t else "$t  ·  $ep"
+                }
+                if (poster != null && card.tag == video) {
+                    art.setImageBitmap(poster)
+                }
             }
         }
     }
