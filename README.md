@@ -24,8 +24,21 @@ No ads. No upload limits. Your Telegram account *is* the server.
 
 Also explore Mobile version : https://github.com/aravindbuilds/TGTV
 
-## What's new in v1.2 (stable)
+## What's new in v1.4 (stable)
 
+- **Three launcher themes** - *Settings > App icon* switches the launcher between
+  **CRT** (classic blue, default), **Noir** (amber) and **Cyberpunk** (neon) - no reinstall needed.
+- **Series awareness** - episode files (SxxEyy / NxNN / Season-Ep) resolve to the
+  show on TMDB; the details line shows an Sxx Eyy badge and subtitles are pinned
+  to the exact episode.
+- **Continue Watching row** - progress cards with real art, a 'Show - Sxx Eyy'
+  title and resume on OK.
+- **Sort & view** - the dialog now lists every option with the active one checked,
+  including the detailed file-list view.
+- **Settings reordered by usability** - Search, Refresh, Sort & view, Add chats and
+  Sync first; one-time setup and update toggles last.
+
+## What came in v1.2 (stable)
 - **Watch progress syncs across your devices** — TGTV quietly writes a position
   bookmark into your Saved Messages while you watch. Open the same title later on
   another device running TGTV and it offers to resume exactly where you left off.
@@ -132,7 +145,7 @@ your files never leave the Telegram network on the way to your screen. No Bot AP
 ### 1. Install TGTV on your TV
 
 Grab the APK from [Releases](https://github.com/aravindbuilds/TelegramVideoTV/releases):
-**`TGTV-v1.3-v7a.apk`** (latest) for any Android TV (~24 MB; works on every device
+**`TGTV-v1.4-v7a.apk`** (latest) for any Android TV (~24 MB; works on every device
 including arm64/x86 ones). A **`-universal`** variant (~96 MB, all 4 ABIs) exists
 for emulators.
 
@@ -174,7 +187,7 @@ From a PC on the same Wi-Fi, in the folder containing the APK:
 
 ```powershell
 adb connect <tv-ip>:5555      # some devices use :5037, Fire TV shows the port in Settings
-adb install -r TGTV-v1.3-v7a.apk  # latest release APK
+adb install -r TGTV-v1.4-v7a.apk  # latest release APK
 adb shell am start -n com.tgtv.videotv/.ui.MainActivity
 ```
 
@@ -271,7 +284,7 @@ again after every restart.
 
 | | |
 |---|---|
-| **App version** | v1.3 (stable) — versionCode 10 |
+| **App version** | v1.4 (stable) — versionCode 11 |
 | **Android** | 8.0 (API 26) and newer |
 | **Tested on** | Xiaomi Mi Box 4 (Android 9, armeabi-v7a) |
 | **Variants** | **v7a** (armeabi-v7a only, ~24 MB — recommended for all devices) and **universal** (all 4 ABIs, ~96 MB — emulators / exotic arm64 devices) |

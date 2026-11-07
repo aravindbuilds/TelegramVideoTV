@@ -2,7 +2,10 @@ package com.tgtv.videotv.ui
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Bundle
 import android.view.View
 import android.widget.Toast
@@ -64,6 +67,8 @@ class MainBrowseFragment : BrowseSupportFragment() {
         ActionItem(ACTION_SORT_VIEW, "▤", "Sort & view", "Newest • Cards")
     private var syncAction =
         ActionItem(ACTION_BACKUP, "⇄", "Sync across devices", "On — continue on any device")
+    private var iconAction =
+        ActionItem(ACTION_APP_ICON, "◉", "App icon", "CRT")
 
     private val rowsAdapter = ArrayObjectAdapter(
         ListRowPresenter(FocusHighlight.ZOOM_FACTOR_MEDIUM).apply { shadowEnabled = false },
@@ -81,6 +86,7 @@ class MainBrowseFragment : BrowseSupportFragment() {
                 syncAction,
                 ActionItem(ACTION_SUBS, "ⓒ", "Subtitles", "On/off, languages and size"),
                 ActionItem(ACTION_TMDB, "★", "TMDB metadata", "Real titles, years and ratings on the cards"),
+                iconAction,
                 ActionItem(ACTION_PAIR_VIA_PHONE, "◱", "Pair via phone", "Scan a QR with Telegram"),
                 ActionItem(ACTION_SIGN_OUT, "⎋", "Sign out", "Forget this session and start over"),
                 updateAction,
@@ -131,6 +137,10 @@ class MainBrowseFragment : BrowseSupportFragment() {
         activity?.let { updateBetaCard(it) }
         syncSortViewCard()
         syncSyncCard()
+        syncAppIconCard()
+        // App updates reset enabled components to the manifest defaults;
+        // re-apply the stored icon choice so launcher and card agree
+        activity?.let { runCatching { applyLauncherIcon(it, Credentials.appIcon(it)) } }
         observeUpdates()
         // Silent update check (like the phone app): once per process, a few
         // seconds after launch so the library paints first; a new version
@@ -249,6 +259,7 @@ class MainBrowseFragment : BrowseSupportFragment() {
             ACTION_TMDB -> showTmdbDialog(activity)
             ACTION_SUBS -> showSubtitlesDialog(activity)
             ACTION_SORT_VIEW -> showSortViewDialog(activity)
+            ACTION_APP_ICON -> showAppIconDialog(activity)
             ACTION_ADD_CHATS -> {
                 showLibraryChatsDialog(activity)
                 // Pins changed -> fold them into the cloud backup (throttled)
@@ -368,6 +379,109 @@ class MainBrowseFragment : BrowseSupportFragment() {
                 .setView(container)
                 .setPositiveButton("Done", null)
                 .show()
+        }
+    }
+
+    /**
+     * Launcher icon picker. Switching flips which activity-alias is enabled
+     * (the manifest's launcher entry), so the icon changes without a
+     * reinstall. The target alias is enabled before the others are disabled
+     * so the launcher never ends up with zero entries.
+     */
+    private fun showAppIconDialog(activity: Activity) {
+        val themes = listOf(
+            Credentials.ICON_CRT to "CRT (classic blue)",
+            Credentials.ICON_NOIR to "Noir (amber glow)",
+            Credentials.ICON_CYBERPUNK to "Cyberpunk (neon)",
+        )
+        val pad = (20 * resources.displayMetrics.density).toInt()
+        val container = android.widget.LinearLayout(activity).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(pad, pad / 2, pad, 0)
+        }
+        val optionViews = mutableListOf<Pair<android.widget.TextView, String>>()
+
+        fun renderMarks() {
+            val sel = Credentials.appIcon(activity)
+            optionViews.forEach { (tv, key) ->
+                tv.text = if (key == sel) "✓  ${themes.first { it.first == key }.second}" else "    ${themes.first { it.first == key }.second}"
+                tv.setTextColor(if (key == sel) 0xFFE50914.toInt() else 0xFFEDEDED.toInt())
+            }
+        }
+
+        themes.forEach { (key, label) ->
+            val tv = android.widget.TextView(activity).apply {
+                text = label
+                textSize = 16f
+                setPadding(pad / 3, pad / 2, pad / 3, pad / 2)
+                isFocusable = true
+                isFocusableInTouchMode = true
+                setOnClickListener {
+                    Credentials.setAppIcon(activity, key)
+                    applyLauncherIcon(activity, key)
+                    renderMarks()
+                    syncAppIconCard()
+                }
+                setOnFocusChangeListener { v, focused ->
+                    v.animate().scaleX(if (focused) 1.04f else 1f)
+                        .scaleY(if (focused) 1.04f else 1f).setDuration(100).start()
+                }
+            }
+            optionViews.add(tv to key)
+            container.addView(tv)
+        }
+        renderMarks()
+
+        activity.runOnUiThread {
+            AlertDialog.Builder(activity)
+                .setTitle("App icon")
+                .setView(container)
+                .setPositiveButton("Done", null)
+                .show()
+        }
+    }
+
+    /** Enables the [key] theme's alias, disables the other two. */
+    private fun applyLauncherIcon(context: Context, key: String) {
+        val aliases =
+            mapOf(
+                Credentials.ICON_CRT to ".IconCrt",
+                Credentials.ICON_NOIR to ".IconNoir",
+                Credentials.ICON_CYBERPUNK to ".IconCyberpunk",
+            )
+        val pm = context.packageManager
+        val pkg = context.packageName
+        // ComponentName needs the fully-qualified class name (the ".Name"
+        // shorthand is manifest-only)
+        fun set(alias: String, enabled: Boolean) {
+            pm.setComponentEnabledSetting(
+                ComponentName(pkg, pkg + alias),
+                if (enabled) {
+                    PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+                } else {
+                    PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+                },
+                PackageManager.DONT_KILL_APP,
+            )
+        }
+        set(aliases.getValue(key), enabled = true)
+        aliases.filterKeys { it != key }.forEach { set(it.value, enabled = false) }
+    }
+
+    /** Live subtitle on the "App icon" card. */
+    private fun syncAppIconCard() {
+        val activity = activity ?: return
+        val label = when (Credentials.appIcon(activity)) {
+            Credentials.ICON_NOIR -> "Noir"
+            Credentials.ICON_CYBERPUNK -> "Cyberpunk"
+            else -> "CRT"
+        }
+        if (iconAction.sub != label) {
+            val pos = actionsAdapter.indexOf(iconAction)
+            if (pos >= 0) {
+                iconAction = iconAction.copy(sub = label)
+                actionsAdapter.replace(pos, iconAction)
+            }
         }
     }
 
@@ -1297,6 +1411,7 @@ class MainBrowseFragment : BrowseSupportFragment() {
         const val ACTION_SEARCH = 9
         const val ACTION_BACKUP = 10
         const val ACTION_SORT_VIEW = 11
+    const val ACTION_APP_ICON = 12
 
         /** Set when a Remove happens elsewhere; guarantees a row rebuild. */
         var forceRebuild = false

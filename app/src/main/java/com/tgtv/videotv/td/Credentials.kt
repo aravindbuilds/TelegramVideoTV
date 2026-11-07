@@ -22,6 +22,7 @@ object Credentials {
     const val KEY_HOME_SORT = "home_sort"
     const val KEY_HOME_VIEW = "home_view"
     const val KEY_SYNC_ON = "sync_on"
+    const val KEY_APP_ICON = "app_icon"
     const val MODE_BOT = "bot"
     const val MODE_USER = "user"
 
@@ -34,6 +35,12 @@ object Credentials {
     /** Library row style (Settings -> Sort & view). */
     const val VIEW_CARDS = 0
     const val VIEW_DETAILED = 1
+
+    /** Launcher icon themes (Settings -> App icon). Matches the
+     *  activity-alias names in the manifest; CRT is the default. */
+    const val ICON_CRT = "crt"
+    const val ICON_NOIR = "noir"
+    const val ICON_CYBERPUNK = "cyberpunk"
 
     fun homeSort(context: Context): Int = prefs(context).getInt(KEY_HOME_SORT, SORT_NEWEST)
 
@@ -52,6 +59,14 @@ object Credentials {
 
     fun setSyncOn(context: Context, on: Boolean) {
         prefs(context).edit().putBoolean(KEY_SYNC_ON, on).apply()
+    }
+
+    /** Chosen launcher icon theme; CRT out of the box. */
+    fun appIcon(context: Context): String =
+        prefs(context).getString(KEY_APP_ICON, ICON_CRT) ?: ICON_CRT
+
+    fun setAppIcon(context: Context, key: String) {
+        prefs(context).edit().putString(KEY_APP_ICON, key).apply()
     }
 
     private fun prefs(context: Context): SharedPreferences =
